@@ -1,8 +1,11 @@
 {
   "name": "Badge Toggle",
-  "description": "69 local visual badge toggles with experimental renderer-only avatar decorations. Real badges are replaced locally.",
+  "description": "69 local visual badge toggles with experimental renderer-only avatar decorations. Real badges are replaced locally when enabled.",
   "authors": ["ensinxhaixh-blip"],
   "main": "index.js",
-  "hash": "badgetoggle-replace-real-badges-decor-resolver-v3",
-  "version": "1.6.0"
+  "vendetta": {
+    "icon": "BadgeIcon"
+  },
+  "hash": "badgetoggle-real-plus-fake-decor-v4",
+  "version": "1.6.1"
 }
