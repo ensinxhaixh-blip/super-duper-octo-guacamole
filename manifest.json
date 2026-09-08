@@ -1,9 +1,0 @@
-{
-  "name": "Custom Badges",
-  "description": "Adds toggleable custom Discord profile badges.",
-  "authors": [
-    "Zen"
-  ],
-  "main": "index.tsx",
-  "version": "1.0.0"
-}
