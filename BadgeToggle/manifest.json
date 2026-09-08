@@ -1,1 +1,14 @@
-
+{
+  "name": "Badge Toggle",
+  "description": "Client-side toggle to show or hide all user badges everywhere",
+  "authors": [
+    {
+      "name": "Grok",
+      "id": "0"
+    }
+  ],
+  "main": "index.js",
+  "vendetta": {
+    "icon": "ic_badge_staff"
+  }
+}
