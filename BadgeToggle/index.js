@@ -118,11 +118,13 @@
       var cb = function (args, ret) {
         var d = selectedDecoration();
         if (!d) return ret;
-        var uid = argUserId(args);
-        if (!uid || uid !== currentUserId()) return ret;
+        // iOS commonly passes only { avatarDecoration, canAnimate }, not a user id.
         var a = args && args[0] && args[0].avatarDecoration;
-        if (a && a._badgeToggleDecoration) return ret;
-        return DECOR_CDN + d[2].replace(/^a_/, "") + ".png";
+        if (!a) return ret;
+        var asset = d[2];
+        var canAnimate = !!(args && args[0] && args[0].canAnimate);
+        if (!canAnimate && asset.indexOf("a_") === 0) asset = asset.slice(2);
+        return DECOR_CDN + asset + ".png";
       };
       var un = method === null ? after(target, cb) : after(method, target, cb);
       if (typeof un === "function") decorUnpatches.push(un);
@@ -134,9 +136,9 @@
   function patchDecorations() {
     if (!storage.decorationsEnabled) return true;
     if (decorPatched) return true;
-    // Prefer the avatar-decoration hook. Resolver is only a fallback when it can identify the user.
-    if (patchDecorationHook()) return true;
-    return patchDecorationResolver();
+    var hooked = patchDecorationHook();
+    var resolved = patchDecorationResolver();
+    return hooked || resolved;
   }
 
   function clearDecorationPatches() {
@@ -407,51 +409,23 @@
       if (args && args.length) {
         var a = args[0];
         if (typeof a === "string" || typeof a === "number") uid = String(a);
-        else if (a && typeof a === "object") {
-          uid = a.userId || a.user_id || a.id || null;
-        }
+        else if (a && typeof a === "object") uid = a.userId || a.user_id || a.id || null;
       }
     } catch (_) {}
 
     if (!uid || !isCurrentUser(uid)) return ret;
 
+    // Replace the real badges entirely in the local rendered result.
     var fake = enabledBadges().map(badgePayload);
-
-    // Preserve Discord's real badges and append only our local visual badges.
-    // If no fake badges are enabled, return the original result untouched.
-    if (!fake.length) return ret;
-
-    function merge(real) {
-      var base = Array.isArray(real) ? real.slice() : [];
-      var seen = {};
-      for (var r = 0; r < base.length; r++) {
-        var rid = base[r] && (base[r].id || base[r].badgeId || base[r].key);
-        if (rid != null) seen[String(rid)] = true;
-      }
-      for (var f = 0; f < fake.length; f++) {
-        var fid = String(fake[f].id);
-        if (!seen[fid]) {
-          base.push(fake[f]);
-          seen[fid] = true;
-        }
-      }
-      return base;
-    }
-
-    if (Array.isArray(ret)) return merge(ret);
+    if (Array.isArray(ret)) return fake;
     if (ret && typeof ret === "object") {
       var copy = {};
-      for (var k in ret) {
-        if (Object.prototype.hasOwnProperty.call(ret, k)) copy[k] = ret[k];
-      }
-      var originalBadges = Array.isArray(ret.badges) ? ret.badges :
-                           (Array.isArray(ret.items) ? ret.items : []);
-      var merged = merge(originalBadges);
-      copy.badges = merged;
-      if (Array.isArray(ret.items)) copy.items = merged;
+      for (var k in ret) if (Object.prototype.hasOwnProperty.call(ret, k)) copy[k] = ret[k];
+      copy.badges = fake;
+      if (Array.isArray(ret.items)) copy.items = fake;
       return copy;
     }
-    return ret;
+    return fake;
   }
 
   function patchJsx() {
