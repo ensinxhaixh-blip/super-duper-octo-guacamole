@@ -16,6 +16,21 @@
   var CDN = "https://cdn.discordapp.com/badge-icons";
   var OPAL = CDN + "/5b154df19c53dce2af92c9b61e6be5e2.png";
 
+  var DECORATIONS = [
+    ["decor_angry", "Angry", "a_3c97a2d37f433a7913a1c7b7a735d000"],
+    ["decor_owlbear", "Owlbear Cub", "a_3c5743cedcb72131c58278278a97c143"],
+    ["decor_straw_hat", "Straw Hat", "a_3d1e6078b2e4c8865e0ad0f429d651b1"],
+    ["decor_heartbloom", "Heartbloom", "a_3e1fc3c7ee2e34e8176f4737427e8f4f"],
+    ["decor_candlelight", "Candlelight", "a_3f29e6edfe1cff43736f644cf1d01278"],
+    ["decor_butterflies", "Butterflies", "a_4cd9ae5a8d103c219eacd3674d7730cd"],
+    ["decor_ufo", "UFO", "a_6fdbddb6229453eac3bbb212edf5cd1c"],
+    ["decor_sakura", "Sakura Warrior", "a_7cf09c7e78d6eb35ae354acc1d5cc676"],
+    ["decor_in_love", "In Love", "a_8ffa2ba9bff18e96b76c2e66fd0d7fa3"],
+    ["decor_solar_orbit", "Solar Orbit", "a_9a6bf0ab30a6719d6eb09fa4996984ca"],
+    ["decor_ruby_hearts", "Ruby Hearts", "a_a1c0581971d4a296908829289fea2c47"],
+    ["decor_fire", "Fire", "a_a065206df7b011a5510e4e5bca7d49be"]
+  ];
+
   /*
    * Ordered to follow Discord's badge families/progression:
    * general/profile -> legacy/program -> Nitro -> boosting ->
@@ -172,6 +187,10 @@
   }
 
   if (storage.enabled == null) storage.enabled = true;
+  if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
+  for (var di = 0; di < DECORATIONS.length; di++) {
+    if (storage[DECORATIONS[di][0]] == null) storage[DECORATIONS[di][0]] = false;
+  }
 
   var unpatches = [];
   var retryTimer = null;
@@ -205,11 +224,6 @@
     if (id == null) return false;
     var me = currentUserId();
     return me != null && String(id) === me;
-  }
-
-  if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
-  for (var di = 0; di < DECORATIONS.length; di++) {
-    if (storage[DECORATIONS[di].key] == null) storage[DECORATIONS[di].key] = false;
   }
 
   function enabledBadges() {
@@ -320,8 +334,59 @@
     });
   }
 
+  var decorPatched = false;
+  var decorUnpatches = [];
+
+  function enabledDecoration() {
+    if (!storage.decorationsEnabled) return null;
+    for (var i = 0; i < DECORATIONS.length; i++) {
+      if (storage[DECORATIONS[i][0]]) return DECORATIONS[i];
+    }
+    return null;
+  }
+
+  function decorateUser(user) {
+    var d = enabledDecoration();
+    if (!d || !user || !isCurrentUser(user.id)) return user;
+    var copy = {};
+    for (var k in user) {
+      if (Object.prototype.hasOwnProperty.call(user, k)) copy[k] = user[k];
+    }
+    copy.avatar_decoration_data = { asset: d[2], sku_id: "0" };
+    copy.avatarDecoration = { asset: d[2], sku_id: "0" };
+    return copy;
+  }
+
+  function patchDecorations() {
+    if (decorPatched || !storage.decorationsEnabled) return decorPatched;
+    var store = safe(function () { return findByStoreName("UserStore"); });
+    if (!store) return false;
+    var names = ["getCurrentUser", "getUser", "getUserById"];
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      if (typeof store[name] !== "function") continue;
+      try {
+        var un = after(name, store, function (args, ret) {
+          if (!ret) return ret;
+          if (Array.isArray(ret)) return ret.map(decorateUser);
+          return decorateUser(ret);
+        });
+        if (typeof un === "function") decorUnpatches.push(un);
+      } catch (_) {}
+    }
+    if (!decorUnpatches.length) return false;
+    decorPatched = true;
+    return true;
+  }
+
+  function clearDecorationPatches() {
+    for (var i = 0; i < decorUnpatches.length; i++) safe(decorUnpatches[i]);
+    decorUnpatches = [];
+    decorPatched = false;
+  }
+
   function tryPatch() {
-    if (patchUseBadges() && patchDecorations()) {
+    if (patchUseBadges()) {
       if (retryTimer) {
         clearInterval(retryTimer);
         retryTimer = null;
@@ -349,39 +414,8 @@
     refresh();
   }
 
-  function setDecoration(key, value) {
-    // Keep decoration selection exclusive to avoid ambiguous profile output.
-    for (var i = 0; i < DECORATIONS.length; i++) {
-      storage[DECORATIONS[i].key] = value && DECORATIONS[i].key === key;
-    }
-    refresh();
-  }
-
   function Settings() {
     var children = [];
-    children.push(React.createElement(
-      FormSection,
-      { title: "Avatar Decorations" },
-      React.createElement(FormSwitchRow, {
-        label: "Enable local avatar decoration",
-        subLabel: "Only changes your own profile on this device",
-        value: !!storage.decorationsEnabled,
-        onValueChange: function (v) {
-          storage.decorationsEnabled = !!v;
-          refresh();
-        }
-      }),
-      DECORATIONS.map(function (item) {
-        return React.createElement(FormSwitchRow, {
-          key: item.key,
-          label: item.name,
-          subLabel: "Local only",
-          value: !!storage[item.key],
-          onValueChange: function (v) { setDecoration(item.key, v); }
-        });
-      })
-    ));
-
 
     children.push(React.createElement(
       FormSection,
@@ -422,6 +456,37 @@
       ));
     }
 
+    children.push(React.createElement(
+      FormSection,
+      { title: "Avatar Decorations" },
+      React.createElement(FormSwitchRow, {
+        label: "Enable local decorations",
+        subLabel: "Only changes your profile on this device",
+        value: !!storage.decorationsEnabled,
+        onValueChange: function (v) {
+          storage.decorationsEnabled = !!v;
+          if (v) patchDecorations();
+          else clearDecorationPatches();
+          refresh();
+        }
+      }),
+      DECORATIONS.map(function (item) {
+        return React.createElement(FormSwitchRow, {
+          key: item[0],
+          label: item[1],
+          subLabel: "Local only",
+          value: !!storage[item[0]],
+          onValueChange: function (v) {
+            for (var j = 0; j < DECORATIONS.length; j++) storage[DECORATIONS[j][0]] = false;
+            if (v) storage[item[0]] = true;
+            storage.decorationsEnabled = !!v;
+            if (v) patchDecorations(); else clearDecorationPatches();
+            refresh();
+          }
+        });
+      })
+    ));
+
     return React.createElement(
       RN.ScrollView,
       {
@@ -435,6 +500,7 @@
   return {
     onLoad: function () {
       startPatching();
+      if (storage.decorationsEnabled) patchDecorations();
     },
 
     onUnload: function () {
@@ -448,77 +514,3 @@
     settings: Settings
   };
 })()
-
-  // Avatar decorations: local-only client rendering.
-  // Only one decoration is applied at a time (the first enabled one).
-  var DECORATIONS = [
-    { key: "decor_angry", name: "Angry", asset: "a_3c97a2d37f433a7913a1c7b7a735d000", sku: "0" },
-    { key: "decor_owlbear", name: "Owlbear Cub", asset: "a_3c5743cedcb72131c58278278a97c143", sku: "0" },
-    { key: "decor_straw_hat", name: "Straw Hat", asset: "a_3d1e6078b2e4c8865e0ad0f429d651b1", sku: "0" },
-    { key: "decor_heartbloom", name: "Heartbloom", asset: "a_3e1fc3c7ee2e34e8176f4737427e8f4f", sku: "0" },
-    { key: "decor_candlelight", name: "Candlelight", asset: "a_3f29e6edfe1cff43736f644cf1d01278", sku: "0" },
-    { key: "decor_butterflies", name: "Butterflies", asset: "a_4cd9ae5a8d103c219eacd3674d7730cd", sku: "0" },
-    { key: "decor_ufo", name: "UFO", asset: "a_6fdbddb6229453eac3bbb212edf5cd1c", sku: "0" },
-    { key: "decor_sakura", name: "Sakura Warrior", asset: "a_7cf09c7e78d6eb35ae354acc1d5cc676", sku: "0" },
-    { key: "decor_in_love", name: "In Love", asset: "a_8ffa2ba9bff18e96b76c2e66fd0d7fa3", sku: "0" },
-    { key: "decor_solar_orbit", name: "Solar Orbit", asset: "a_9a6bf0ab30a6719d6eb09fa4996984ca", sku: "0" },
-    { key: "decor_ruby_hearts", name: "Ruby Hearts", asset: "a_a1c0581971d4a296908829289fea2c47", sku: "0" },
-    { key: "decor_fire", name: "Fire", asset: "a_a065206df7b011a5510e4e5bca7d49be", sku: "0" }
-  ];
-
-  var decorPatched = false;
-  var decorUnpatches = [];
-
-  function enabledDecoration() {
-    if (!storage.decorationsEnabled) return null;
-    for (var i = 0; i < DECORATIONS.length; i++) {
-      if (storage[DECORATIONS[i].key]) return DECORATIONS[i];
-    }
-    return null;
-  }
-
-  function decorateUser(user) {
-    var d = enabledDecoration();
-    if (!d || !user || !isCurrentUser(user.id)) return user;
-    var copy = {};
-    for (var k in user) {
-      if (Object.prototype.hasOwnProperty.call(user, k)) copy[k] = user[k];
-    }
-    copy.avatar_decoration_data = { asset: d.asset, sku_id: d.sku };
-    copy.avatarDecoration = { asset: d.asset, sku_id: d.sku };
-    return copy;
-  }
-
-  function patchDecorations() {
-    if (decorPatched) return true;
-    var store = safe(function () { return findByStoreName("UserStore"); });
-    if (!store) return false;
-
-    function patchMethod(name) {
-      if (!store || typeof store[name] !== "function") return;
-      try {
-        var un = after(store, name, function (args, ret) {
-          if (!ret) return ret;
-          if (Array.isArray(ret)) return ret.map(decorateUser);
-          return decorateUser(ret);
-        });
-        if (typeof un === "function") decorUnpatches.push(un);
-      } catch (_) {}
-    }
-
-    patchMethod("getCurrentUser");
-    patchMethod("getUser");
-    patchMethod("getUserById");
-
-    if (!decorUnpatches.length) return false;
-    decorPatched = true;
-    return true;
-  }
-
-  function clearDecorationPatches() {
-    for (var i = 0; i < decorUnpatches.length; i++) {
-      try { decorUnpatches[i](); } catch (_) {}
-    }
-    decorUnpatches = [];
-    decorPatched = false;
-  }
