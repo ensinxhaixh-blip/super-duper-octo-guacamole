@@ -4,14 +4,9 @@
   var React = vendetta.metro.common.React;
   var RN = vendetta.metro.common.ReactNative;
   var findByName = vendetta.metro.findByName;
-  var findByNameAll = vendetta.metro.findByNameAll;
-  var findByDisplayName = vendetta.metro.findByDisplayName;
-  var findByDisplayNameAll = vendetta.metro.findByDisplayNameAll;
   var findByProps = vendetta.metro.findByProps;
   var findByStoreName = vendetta.metro.findByStoreName;
-  var findAll = vendetta.metro.findAll;
   var after = vendetta.patcher.after;
-  var before = vendetta.patcher.before;
   var storage = vendetta.plugin.storage;
   var Forms = vendetta.ui.components.Forms;
 
@@ -94,155 +89,295 @@
     return { asset: d[2], skuId: DECOR_SKU_ID };
   }
 
-  // Decoration strategy: render a local overlay around the user's avatar.
-  // This mirrors the reference implementation's important idea: the frame is
-  // a separate visual layer positioned over the avatar, rather than mutating
-  // Discord's UserStore/profile object.
-  var avatarOverlayUnpatches = [];
-  var avatarOverlayPatched = false;
-  var DECOR_SKU_ID = "100101099111114";
+  function patchDecorationHook() {
+    if (decorPatched) return true;
 
-  function decorationObject() {
-    var d = selectedDecoration();
-    if (!d) return null;
-    return { asset: d[2], skuId: DECOR_SKU_ID };
-  }
+    // This follows the important part of the Vencord/fakeProfile approach:
+    // replace the value returned by Discord's avatar-decoration hook before
+    // the avatar component renders. Do not touch UserStore/profile objects.
+    var candidates = [];
+    var m1 = safe(function () { return findByName("useUserAvatarDecoration", false); });
+    var m2 = safe(function () { return findByProps("useUserAvatarDecoration"); });
+    var m3 = safe(function () { return findByName("useAvatarDecoration", false); });
+    var m4 = safe(function () { return findByProps("useAvatarDecoration"); });
 
-  function isCurrentUserFromProps(props) {
-    try {
-      if (!props) return false;
-      var me = currentUserId();
-      if (!me) return false;
-      var candidates = [
-        props.user,
-        props.currentUser,
-        props.userData,
-        props.account
-      ];
-      for (var i = 0; i < candidates.length; i++) {
-        var u = candidates[i];
-        if (u && u.id != null && String(u.id) === me) return true;
-      }
-      if (props.userId != null && String(props.userId) === me) return true;
-      return false;
-    } catch (_) { return false; }
-  }
+    if (m1) candidates.push([m1, "useUserAvatarDecoration"]);
+    if (m2 && m2 !== m1) candidates.push([m2, "useUserAvatarDecoration"]);
+    if (m3) candidates.push([m3, "useAvatarDecoration"]);
+    if (m4 && m4 !== m3) candidates.push([m4, "useAvatarDecoration"]);
 
-  function avatarSize(props, element) {
-    try {
-      if (props && typeof props.size === "number") return props.size;
-      if (props && typeof props.avatarSize === "number") return props.avatarSize;
-      var st = element && element.props && element.props.style;
-      if (st && typeof st === "object" && !Array.isArray(st)) {
-        if (typeof st.width === "number" && st.width === st.height) return st.width;
-      }
-    } catch (_) {}
-    return 48;
-  }
-
-  function overlayAvatarResult(args, ret) {
-    try {
-      if (!storage.decorationsEnabled) return ret;
-      if (!ret || !React || typeof React.isValidElement !== "function" || !React.isValidElement(ret)) return ret;
-      var props = (args && args[0] && typeof args[0] === "object") ? args[0] : null;
-      if (!isCurrentUserFromProps(props)) return ret;
-      var d = decorationObject();
-      if (!d) return ret;
-
-      var size = avatarSize(props, ret);
-      var url = DECOR_CDN + d.asset + ".png?size=" + Math.max(16, Math.round(size * 2));
-      var wrapperStyle = {
-        position: "relative",
-        width: size,
-        height: size,
-        overflow: "visible"
-      };
-      var imageStyle = {
-        position: "absolute",
-        left: -Math.round(size * 0.10),
-        top: -Math.round(size * 0.10),
-        width: Math.round(size * 1.20),
-        height: Math.round(size * 1.20),
-        zIndex: 10,
-        pointerEvents: "none"
-      };
-      var overlay = React.createElement(RN.Image, {
-        source: { uri: url },
-        style: imageStyle,
-        resizeMode: "contain",
-        pointerEvents: "none"
-      });
-      return React.createElement(RN.View, { style: wrapperStyle }, ret, overlay);
-    } catch (_) {
-      return ret;
-    }
-  }
-
-  function patchOneAvatarTarget(mod, method) {
-    try {
-      var target = null;
-      if (typeof mod === "function") target = mod;
-      else if (mod && method && typeof mod[method] === "function") target = mod;
-      else if (mod && typeof mod.default === "function") { target = mod; method = "default"; }
-      else if (mod && typeof mod.render === "function") { target = mod; method = "render"; }
-      if (!target) return false;
-
-      var un = method ? after(method, target, overlayAvatarResult) : after(target, overlayAvatarResult);
-      if (typeof un === "function") avatarOverlayUnpatches.push(un);
-      return !!un;
-    } catch (_) { return false; }
-  }
-
-  function patchAvatarOverlays() {
-    if (avatarOverlayPatched) return true;
-    var names = [
-      "Avatar",
-      "UserAvatar",
-      "AvatarWithDecoration",
-      "UserAvatarWithDecoration",
-      "UserAvatarComponent"
-    ];
-    var found = 0;
-    var seen = [];
-
-    function add(mod) {
-      if (!mod) return;
-      var key = mod;
-      if (typeof mod === "object") key = mod.default || mod.render || mod;
-      if (seen.indexOf(key) !== -1) return;
-      seen.push(key);
-      if (patchOneAvatarTarget(mod, null)) found++;
-    }
-
-    for (var i = 0; i < names.length; i++) {
+    for (var c = 0; c < candidates.length; c++) {
       try {
-        var arr = typeof findByNameAll === "function" ? findByNameAll(names[i], false) : [];
-        if (Array.isArray(arr)) arr.forEach(add);
-        else add(safe(function () { return findByName(names[i], false); }));
-      } catch (_) {}
-      try {
-        var arr2 = typeof findByDisplayNameAll === "function" ? findByDisplayNameAll(names[i], false) : [];
-        if (Array.isArray(arr2)) arr2.forEach(add);
-        else add(safe(function () { return findByDisplayName(names[i], false); }));
+        var pair = candidates[c];
+        var obj = pair[0];
+        var name = pair[1];
+        var target = null;
+        var method = null;
+
+        if (typeof obj === "function") target = obj;
+        else if (obj && typeof obj[name] === "function") {
+          target = obj;
+          method = name;
+        }
+        if (!target) continue;
+
+        var callback = function (args, ret) {
+          var d = selectedDecoration();
+          if (!d) return ret;
+
+          // If Discord supplies a user, only spoof our own decoration.
+          // If this particular hook supplies no user argument, allow the
+          // hook result to be replaced; this is necessary on some iOS builds
+          // where the user is captured by the component instead of passed to
+          // the hook.
+          var uid = argUserId(args);
+          if (uid && !isCurrentUser(uid)) return ret;
+
+          return decorationObject();
+        };
+
+        var un = method === null ? after(target, callback) : after(method, target, callback);
+        if (typeof un === "function") {
+          decorUnpatches.push(un);
+          decorPatched = true;
+          return true;
+        }
       } catch (_) {}
     }
+    return false;
+  }
 
-    if (found > 0) avatarOverlayPatched = true;
-    return found > 0;
+  function patchDecorationResolver() {
+    if (decorResolverPatched) return true;
+
+    var candidates = [];
+    var n1 = safe(function () { return findByName("getAvatarDecorationURL", false); });
+    var n2 = safe(function () { return findByProps("getAvatarDecorationURL"); });
+    if (n1) candidates.push(n1);
+    if (n2 && n2 !== n1) candidates.push(n2);
+
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        var obj = candidates[i];
+        var target = null;
+        var method = null;
+        if (typeof obj === "function") target = obj;
+        else if (obj && typeof obj.getAvatarDecorationURL === "function") {
+          target = obj;
+          method = "getAvatarDecorationURL";
+        }
+        if (!target) continue;
+
+        var cb = function (args, ret) {
+          var d = selectedDecoration();
+          if (!d) return ret;
+
+          var input = args && args[0];
+          var a = input && input.avatarDecoration;
+          if (!a || a.skuId !== DECOR_SKU_ID) return ret;
+
+          var asset = d[2];
+          var canAnimate = !!(input && input.canAnimate);
+          if (!canAnimate && asset.indexOf("a_") === 0) asset = asset.slice(2);
+          return DECOR_CDN + asset + ".png";
+        };
+
+        var un = method === null ? after(target, cb) : after(method, target, cb);
+        if (typeof un === "function") {
+          decorUnpatches.push(un);
+          decorResolverPatched = true;
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  function patchDecorationJSX() {
+    // Intentionally disabled. Patching React's global JSX factory was the
+    // source of the iOS profile render crash; decoration should enter through
+    // Discord's avatar-decoration hook instead.
+    return false;
   }
 
   function patchDecorations() {
-    if (!storage.decorationsEnabled) return false;
-    return patchAvatarOverlays();
+    if (!storage.decorationsEnabled) return true;
+    patchDecorationHook();
+    patchDecorationResolver();
+    return decorPatched || decorResolverPatched;
   }
 
   function clearDecorationPatches() {
-    for (var i = 0; i < avatarOverlayUnpatches.length; i++) {
-      try { avatarOverlayUnpatches[i](); } catch (_) {}
+    for (var i = 0; i < decorUnpatches.length; i++) {
+      try { if (typeof decorUnpatches[i] === "function") decorUnpatches[i](); } catch (_) {}
     }
-    avatarOverlayUnpatches = [];
-    avatarOverlayPatched = false;
+    decorUnpatches = [];
+    decorPatched = false;
+    decorResolverPatched = false;
+    decorJSXPatched = false;
   }
+
+
+  /*
+   * Ordered to follow Discord's badge families/progression:
+   * general/profile -> legacy/program -> Nitro -> boosting ->
+   * experimental progression families -> app/developer.
+   *
+   * Every switch is independent. This is a LOCAL visual spoof only.
+   */
+  var SECTIONS = [
+    {
+      title: "Profile & program badges",
+      badges: [
+        ["discord-staff", "Discord Staff", "discord_staff.png"],
+        ["partnered-server-owner", "Partnered Server Owner", "partner_server_owner.png"],
+        ["hypesquad-events", "HypeSquad Events", "hypesquad_events.png"],
+        ["hypesquad-bravery", "HypeSquad Bravery", "hypesquad_bravery.png"],
+        ["hypesquad-brilliance", "HypeSquad Brilliance", "hypesquad_brilliance.png"],
+        ["hypesquad-balance", "HypeSquad Balance", "hypesquad_balance.png"],
+        ["bug-hunter", "Bug Hunter", "bug_hunter.png"],
+        ["golden-bug-hunter", "Golden Bug Hunter", "golden_bug_hunter.png"],
+        ["early-supporter", "Early Supporter", "early_supporter.png"],
+        ["moderator-program-alumni", "Moderator Program Alumni", "moderator_programs_aluminum.png"]
+      ]
+    },
+    {
+      title: "Nitro — 1 → 72+ months",
+      badges: [
+        ["nitro-bronze", "Nitro Bronze · 1 month", "nitro_bronze.png"],
+        ["nitro-silver", "Nitro Silver · 3 months", "nitro_silver.png"],
+        ["nitro-gold", "Nitro Gold · 6 months", "nitro_gold.png"],
+        ["nitro-platinum", "Nitro Platinum · 12 months", "nitro_platinum.png"],
+        ["nitro-diamond", "Nitro Diamond · 24 months", "nitro_diamond.png"],
+        ["nitro-emerald", "Nitro Emerald · 36 months", "nitro_emerald.png"],
+        ["nitro-ruby", "Nitro Ruby · 60 months", "nitro_ruby.png"],
+        ["nitro-opal", "Nitro Opal · 72+ months", "nitro_opal.png"]
+      ]
+    },
+    {
+      title: "Server Booster — 1 → 24 months",
+      badges: [
+        ["boost-1", "Server Booster · 1 month", "boost_1_months.png"],
+        ["boost-2", "Server Booster · 2 months", "boost_2_months.png"],
+        ["boost-3", "Server Booster · 3 months", "boost_3_months.png"],
+        ["boost-6", "Server Booster · 6 months", "boost_6_months.png"],
+        ["boost-9", "Server Booster · 9 months", "boost_9_months.png"],
+        ["boost-12", "Server Booster · 12 months", "boost_12_months.png"],
+        ["boost-15", "Server Booster · 15 months", "boost_15_months.png"],
+        ["boost-18", "Server Booster · 18 months", "boost_18_months.png"],
+        ["boost-24", "Server Booster · 24 months", "boost_24_months.png"]
+      ]
+    },
+    {
+      title: "Gifting — 1 → 20 gifts",
+      badges: [
+        ["gift-patron", "Gifting · Patron · 1×", "gifting_patron.png"],
+        ["gift-champion", "Gifting · Champion · 2×", "gifting_champion.png"],
+        ["gift-luminary", "Gifting · Luminary · 3×", "gifting_luminary.png"],
+        ["gift-icon", "Gifting · Icon · 6×", "gifting_icon.png"],
+        ["gift-hero", "Gifting · Hero · 10×", "gifting_hero.png"],
+        ["gift-legend", "Gifting · Legend · 20×", "gifting_legend.png"]
+      ]
+    },
+    {
+      title: "Account Age — 1 → 10+ years",
+      badges: [
+        ["age-seed", "Account Age · Seed · 1 year", "account_age_seed.png"],
+        ["age-sprout", "Account Age · Sprout · 2 years", "account_age_sprout.png"],
+        ["age-bud", "Account Age · Bud · 3 years", "account_age_bud.png"],
+        ["age-sapling", "Account Age · Sapling · 4 years", "account_age_sapling.png"],
+        ["age-blossom", "Account Age · Blossom · 5 years", "account_age_blossom.png"],
+        ["age-redwood", "Account Age · Redwood · 6 years", "account_age_redwood.png"],
+        ["age-sequoia", "Account Age · Sequoia · 7 years", "account_age_sequoia.png"],
+        ["age-bristlecone", "Account Age · Bristlecone · 8 years", "account_age_bristlecone.png"],
+        ["age-stromatolite", "Account Age · Stromatolite · 9 years", "account_age_stromatolite.png"],
+        ["age-primordial", "Account Age · Primordial · 10+ years", "account_age_primordial.png"]
+      ]
+    },
+    {
+      title: "Streaming — 1 → 5,000+ hours",
+      badges: [
+        ["stream-newcomer", "Streaming · Newcomer · 1 hour", "streaming_newcomer.png"],
+        ["stream-fledgling", "Streaming · Fledgling · 5 hours", "streaming_fledgling.png"],
+        ["stream-breakout", "Streaming · Breakout · 20 hours", "streaming_breakout.png"],
+        ["stream-standout", "Streaming · Standout · 75 hours", "streaming_standout.png"],
+        ["stream-trendsetter", "Streaming · Trendsetter · 150 hours", "streaming_trendsetter.png"],
+        ["stream-headliner", "Streaming · Headliner · 300 hours", "streaming_headliner.png"],
+        ["stream-star", "Streaming · Star · 500 hours", "streaming_star.png"],
+        ["stream-sensation", "Streaming · Sensation · 1,000 hours", "streaming_sensation.png"],
+        ["stream-visionary", "Streaming · Visionary · 2,000 hours", "streaming_visionary.png"],
+        ["stream-phenomenon", "Streaming · Phenomenon · 5,000+ hours", "streaming_phenomenon.png"]
+      ]
+    },
+    {
+      title: "Game Time — 1 → 5,000+ hours",
+      badges: [
+        ["game-casual", "Game Time · Casual · 1 hour", "game_time_casual.png"],
+        ["game-recreational", "Game Time · Recreational · 5 hours", "game_time_recreational.png"],
+        ["game-dedicated", "Game Time · Dedicated · 20 hours", "game_time_dedicated.png"],
+        ["game-committed", "Game Time · Committed · 75 hours", "game_time_committed.png"],
+        ["game-serious", "Game Time · Serious · 150 hours", "game_time_serious.png"],
+        ["game-devoted", "Game Time · Devoted · 300 hours", "game_time_devoted.png"],
+        ["game-seasoned", "Game Time · Seasoned · 500 hours", "game_time_seasoned.png"],
+        ["game-ironclad", "Game Time · Ironclad · 1,000 hours", "game_time_ironclad.png"],
+        ["game-unshakeable", "Game Time · Unshakeable · 2,000 hours", "game_time_unshakeable.png"],
+        ["game-eternal", "Game Time · Eternal · 5,000+ hours", "game_time_eternal.png"]
+      ]
+    },
+    {
+      title: "Game Variety — 2 → 100+ games",
+      badges: [
+        ["variety-sampler", "Game Variety · Sampler · 2 games", "game_variety_sampler.png"],
+        ["variety-dabbler", "Game Variety · Dabbler · 5 games", "game_variety_dabbler.png"],
+        ["variety-enthusiast", "Game Variety · Enthusiast · 10 games", "game_variety_enthusiast.png"],
+        ["variety-ranger", "Game Variety · Ranger · 15 games", "game_variety_ranger.png"],
+        ["variety-explorer", "Game Variety · Explorer · 20 games", "game_variety_explorer.png"],
+        ["variety-adventurer", "Game Variety · Adventurer · 30 games", "game_variety_adventurer.png"],
+        ["variety-voyager", "Game Variety · Voyager · 40 games", "game_variety_voyager.png"],
+        ["variety-maverick", "Game Variety · Maverick · 60 games", "game_variety_maverick.png"],
+        ["variety-polymath", "Game Variety · Polymath · 80 games", "game_variety_polymath.png"],
+        ["variety-universalist", "Game Variety · Universalist · 100+ games", "game_variety_universalist.png"]
+      ]
+    },
+    {
+      title: "Developer & app badges",
+      badges: [
+        ["early-verified-developer", "Early Verified Developer", "early_verified_developer.png"],
+        ["active-developer", "Active Developer (retired)", "active_developer.png"],
+        ["supports-commands", "Supports Commands", "supports_application_commands.png"],
+        ["uses-automod", "Uses AutoMod", "uses_automod.png"],
+        ["discord-quests", "Discord Quests", "complete_a_quest.png"],
+        ["orbs", "Orbs", "orbs_apprentice.png"],
+        ["legacy-username", "Legacy Username", "originally_known_as.png"],
+        ["last-meadow", "Last Meadow Online", "last_meadow.png"]
+      ]
+    }
+  ];
+
+  var BADGES = [];
+  var SECTION_LOOKUP = {};
+  for (var s = 0; s < SECTIONS.length; s++) {
+    SECTION_LOOKUP[SECTIONS[s].title] = [];
+    for (var b = 0; b < SECTIONS[s].badges.length; b++) {
+      var x = SECTIONS[s].badges[b];
+      var item = {
+        key: x[0],
+        name: x[1],
+        file: x[2],
+        url: "https://raw.githubusercontent.com/dev-hoehle/discord-badges/main/png/" + x[2]
+      };
+      BADGES.push(item);
+      SECTION_LOOKUP[SECTIONS[s].title].push(item);
+      if (storage[item.key] == null) storage[item.key] = false;
+    }
+  }
+
+  if (storage.enabled == null) storage.enabled = true;
+
+  var unpatches = [];
+  var retryTimer = null;
+  var patchedHook = false;
+  var patchedJsx = false;
 
   function safe(fn) {
     try { return fn(); } catch (_) { return null; }
@@ -474,18 +609,6 @@
         }
       }, 500);
     }
-    if (!decorRetryTimer) {
-      var decorAttempts = 0;
-      decorRetryTimer = setInterval(function () {
-        decorAttempts++;
-        if (storage.decorationsEnabled) patchDecorations();
-        else { clearInterval(decorRetryTimer); decorRetryTimer = null; return; }
-        if (decorAttempts >= 120) {
-          clearInterval(decorRetryTimer);
-          decorRetryTimer = null;
-        }
-      }, 500);
-    }
   }
 
   function setBadge(key, value) {
@@ -545,18 +668,7 @@
         onValueChange: function (v) {
           storage.decorationsEnabled = !!v;
           if (!v) clearDecorationPatches();
-          else {
-            patchDecorations();
-            if (!decorRetryTimer) {
-              var da = 0;
-              decorRetryTimer = setInterval(function () {
-                da++;
-                if (storage.decorationsEnabled) patchDecorations();
-                else { clearInterval(decorRetryTimer); decorRetryTimer = null; return; }
-                if (da >= 120) { clearInterval(decorRetryTimer); decorRetryTimer = null; }
-              }, 500);
-            }
-          }
+          else setTimeout(function () { safe(patchDecorations); }, 0);
           refresh();
         }
       }),
@@ -569,16 +681,7 @@
             storage[item[0]] = !!v;
             storage.decorationsEnabled = !!v;
             clearDecorationPatches();
-            if (v) {
-              patchDecorations();
-              var da2 = 0;
-              decorRetryTimer = setInterval(function () {
-                da2++;
-                if (storage.decorationsEnabled) patchDecorations();
-                else { clearInterval(decorRetryTimer); decorRetryTimer = null; return; }
-                if (da2 >= 120) { clearInterval(decorRetryTimer); decorRetryTimer = null; }
-              }, 500);
-            }
+            if (v) patchDecorations();
             refresh();
           }
         });
@@ -603,8 +706,6 @@
     onUnload: function () {
       if (retryTimer) clearInterval(retryTimer);
       retryTimer = null;
-      if (decorRetryTimer) clearInterval(decorRetryTimer);
-      decorRetryTimer = null;
       clearPatches();
       clearDecorationPatches();
       refresh();
