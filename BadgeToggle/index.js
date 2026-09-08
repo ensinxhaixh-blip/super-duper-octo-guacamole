@@ -1,4 +1,7 @@
-(function () {
+(function(){
+  "use strict";
+  try {
+    return ((function () {
   "use strict";
 
   var React = vendetta.metro.common.React;
@@ -13,17 +16,13 @@
   var FormSwitchRow = Forms.FormSwitchRow;
   var FormSection = Forms.FormSection;
 
-  if (storage.showBadges == null) {
-    storage.showBadges = true;
-  }
+  if (storage.showBadges == null) storage.showBadges = true;
 
   var unpatches = [];
 
   function clearPatches() {
     for (var i = 0; i < unpatches.length; i++) {
-      try {
-        unpatches[i]();
-      } catch (_) {}
+      try { unpatches[i](); } catch (_) {}
     }
     unpatches = [];
   }
@@ -31,15 +30,12 @@
   function addPatch(fn) {
     try {
       var unpatch = fn();
-      if (typeof unpatch === "function") {
-        unpatches.push(unpatch);
-      }
+      if (typeof unpatch === "function") unpatches.push(unpatch);
     } catch (_) {}
   }
 
   function applyPatches() {
     clearPatches();
-
     if (storage.showBadges) return;
 
     var possibleModules = [];
@@ -58,9 +54,9 @@
     addModule(function () { return findByStoreName("UserProfileStore"); });
 
     var modules = [];
-    for (var m = 0; m < possibleModules.length; m++) {
-      if (modules.indexOf(possibleModules[m]) === -1) {
-        modules.push(possibleModules[m]);
+    for (var i = 0; i < possibleModules.length; i++) {
+      if (modules.indexOf(possibleModules[i]) === -1) {
+        modules.push(possibleModules[i]);
       }
     }
 
@@ -70,9 +66,7 @@
       if (typeof mod.getBadges === "function") {
         addPatch(function (target) {
           return function () {
-            return instead("getBadges", target, function () {
-              return [];
-            });
+            return instead("getBadges", target, function () { return []; });
           };
         }(mod));
       }
@@ -80,9 +74,7 @@
       if (typeof mod.getUserBadges === "function") {
         addPatch(function (target) {
           return function () {
-            return instead("getUserBadges", target, function () {
-              return [];
-            });
+            return instead("getUserBadges", target, function () { return []; });
           };
         }(mod));
       }
@@ -96,10 +88,9 @@
               return {
                 ...ret,
                 badges: [],
-                user:
-                  ret.user && typeof ret.user === "object"
-                    ? { ...ret.user, badges: [] }
-                    : ret.user
+                user: ret.user && typeof ret.user === "object"
+                  ? { ...ret.user, badges: [] }
+                  : ret.user
               };
             });
           };
@@ -115,9 +106,7 @@
           if (typeof BadgeComponents[key] === "function") {
             addPatch(function (target, name) {
               return function () {
-                return instead(name, target, function () {
-                  return null;
-                });
+                return instead(name, target, function () { return null; });
               };
             }(BadgeComponents, key));
           }
@@ -152,14 +141,22 @@
   }
 
   return {
-    onLoad: function () {
-      applyPatches();
-    },
-
-    onUnload: function () {
-      clearPatches();
-    },
-
+    onLoad: function () { applyPatches(); },
+    onUnload: function () { clearPatches(); },
     settings: Settings
   };
+})());
+  } catch (err) {
+    try {
+      if (vendetta && vendetta.ui && vendetta.ui.toasts) {
+        vendetta.ui.toasts.showToast(
+          "[Badge Toggle] " + ((err && err.message) || String(err))
+        );
+      }
+    } catch (_) {}
+    return {
+      onLoad: function () {},
+      onUnload: function () {}
+    };
+  }
 })()
