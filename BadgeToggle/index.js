@@ -19,13 +19,170 @@
   var patchedJSX = null;
 
   var CDN =
-    "https://cdn.discordapp.com/badge-icons/";
+    "https://cdn.jsdelivr.net/gh/merlinfuchs/discord-badges/PNG/";
 
-  var OPAL =
-    CDN + "5b154df19c53dce2af92c9b61e6be5e2.png";
+  /*
+   * All selectable badges.
+   *
+   * These are LOCAL visual replacements.
+   * They do not change your actual Discord account.
+   */
 
-  var EARLY_SUPPORTER =
-    CDN + "7060786766c9c840eb3019e725d2b358.png";
+  var BADGES = [
+    {
+      key: "staff",
+      name: "Discord Staff",
+      description: "Discord Staff",
+      image: "staff.png"
+    },
+
+    {
+      key: "partner",
+      name: "Partnered Server Owner",
+      description: "Partnered Server Owner",
+      image: "partnered_server_owner.png"
+    },
+
+    {
+      key: "hypesquadEvents",
+      name: "HypeSquad Events",
+      description: "HypeSquad Events",
+      image: "hypesquad_events.png"
+    },
+
+    {
+      key: "hypesquadBravery",
+      name: "HypeSquad Bravery",
+      description: "HypeSquad Bravery",
+      image: "hypesquad_bravery.png"
+    },
+
+    {
+      key: "hypesquadBrilliance",
+      name: "HypeSquad Brilliance",
+      description: "HypeSquad Brilliance",
+      image: "hypesquad_brilliance.png"
+    },
+
+    {
+      key: "hypesquadBalance",
+      name: "HypeSquad Balance",
+      description: "HypeSquad Balance",
+      image: "hypesquad_balance.png"
+    },
+
+    {
+      key: "bugHunter1",
+      name: "Bug Hunter",
+      description: "Discord Bug Hunter",
+      image: "bug_hunter_level_1.png"
+    },
+
+    {
+      key: "bugHunter2",
+      name: "Golden Bug Hunter",
+      description: "Discord Bug Hunter Level 2",
+      image: "bug_hunter_level_2.png"
+    },
+
+    {
+      key: "earlySupporter",
+      name: "Early Supporter",
+      description: "Early Supporter",
+      image: "early_supporter.png"
+    },
+
+    {
+      key: "earlyDeveloper",
+      name: "Early Verified Developer",
+      description: "Early Verified Bot Developer",
+      image: "early_verified_developer.png"
+    },
+
+    {
+      key: "moderator",
+      name: "Certified Moderator",
+      description: "Moderator Programs Alumni",
+      image: "certified_moderator.png"
+    },
+
+    {
+      key: "activeDeveloper",
+      name: "Active Developer",
+      description: "Active Developer",
+      image: "active_developer.png"
+    },
+
+    {
+      key: "nitro",
+      name: "Nitro",
+      description: "Discord Nitro",
+      image: "nitro.png"
+    },
+
+    {
+      key: "boost1",
+      name: "Server Booster — 1 Month",
+      description: "Server boosting for 1 month",
+      image: "boosting_1_months.png"
+    },
+
+    {
+      key: "boost2",
+      name: "Server Booster — 2 Months",
+      description: "Server boosting for 2 months",
+      image: "boosting_2_months.png"
+    },
+
+    {
+      key: "boost3",
+      name: "Server Booster — 3 Months",
+      description: "Server boosting for 3 months",
+      image: "boosting_3_months.png"
+    },
+
+    {
+      key: "boost6",
+      name: "Server Booster — 6 Months",
+      description: "Server boosting for 6 months",
+      image: "boosting_6_months.png"
+    },
+
+    {
+      key: "boost9",
+      name: "Server Booster — 9 Months",
+      description: "Server boosting for 9 months",
+      image: "boosting_9_months.png"
+    },
+
+    {
+      key: "boost12",
+      name: "Server Booster — 12 Months",
+      description: "Server boosting for 12 months",
+      image: "boosting_12_months.png"
+    },
+
+    {
+      key: "boost15",
+      name: "Server Booster — 15 Months",
+      description: "Server boosting for 15 months",
+      image: "boosting_15_months.png"
+    },
+
+    {
+      key: "boost18",
+      name: "Server Booster — 18 Months",
+      description: "Server boosting for 18 months",
+      image: "boosting_18_months.png"
+    },
+
+    {
+      key: "boost24",
+      name: "Server Booster — 24 Months",
+      description: "Server boosting for 24 months",
+      image: "boosting_24_months.png"
+    }
+  ];
 
 
   /* -------------------------
@@ -35,11 +192,25 @@
   if (storage.enabled == null)
     storage.enabled = true;
 
-  if (storage.opal == null)
-    storage.opal = true;
+  for (var s = 0; s < BADGES.length; s++) {
+    var badgeKey = BADGES[s].key;
 
-  if (storage.early == null)
-    storage.early = true;
+    if (storage[badgeKey] == null) {
+      storage[badgeKey] = false;
+    }
+  }
+
+
+  /*
+   * Make badge ID.
+   *
+   * The ID is local and intentionally different
+   * from Discord's real badge IDs.
+   */
+
+  function badgeId(badge) {
+    return "badge-toggle-" + badge.key;
+  }
 
 
   /* -------------------------
@@ -72,8 +243,7 @@
 
       if (
         UserStore &&
-        typeof UserStore.getCurrentUser ===
-          "function"
+        typeof UserStore.getCurrentUser === "function"
       ) {
         return UserStore.getCurrentUser();
       }
@@ -89,8 +259,7 @@
 
     if (
       typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "bigint"
+      typeof value === "number"
     ) {
       return String(value);
     }
@@ -104,45 +273,23 @@
     if (value.id != null)
       return String(value.id);
 
-    if (
-      value.user &&
-      typeof value.user === "object"
-    ) {
-      if (value.userId != null)
-        return String(value.userId);
-
-      if (value.user.id != null)
-        return String(value.user.id);
-
-      if (value.user.userId != null)
-        return String(value.user.userId);
-    }
+    if (value.user && value.user.id != null)
+      return String(value.user.id);
 
     if (
       value.member &&
-      value.member.user
+      value.member.user &&
+      value.member.user.id != null
     ) {
-      if (value.member.user.id != null)
-        return String(value.member.user.id);
-
-      if (value.member.user.userId != null)
-        return String(value.member.user.userId);
+      return String(value.member.user.id);
     }
 
     if (
       value.profile &&
-      value.profile.user
+      value.profile.user &&
+      value.profile.user.id != null
     ) {
-      if (value.profile.user.id != null)
-        return String(value.profile.user.id);
-
-      if (
-        value.profile.user.userId != null
-      ) {
-        return String(
-          value.profile.user.userId
-        );
-      }
+      return String(value.profile.user.id);
     }
 
     return null;
@@ -160,76 +307,55 @@
     if (target == null)
       return false;
 
-    return (
-      String(target) ===
-      String(current.id)
-    );
+    return String(target) === String(current.id);
   }
 
 
   /* -------------------------
-     FAKE BADGES
+     CREATE SELECTED BADGES
   ------------------------- */
 
   function makeBadges() {
-    var badges = [];
+    var result = [];
 
-    if (storage.opal) {
-      badges.push({
-        id:
-          "larp-premium_tenure_opal",
+    for (var i = 0; i < BADGES.length; i++) {
+      var badge = BADGES[i];
 
-        description:
-          "Nitro · Opal (72+ mo)",
+      if (!storage[badge.key])
+        continue;
 
+      result.push({
+        id: badgeId(badge),
+        description: badge.description,
         icon: " "
       });
     }
 
-    if (storage.early) {
-      badges.push({
-        id:
-          "larp-early_supporter",
-
-        description:
-          "Early Supporter",
-
-        icon: " "
-      });
-    }
-
-    return badges;
+    return result;
   }
 
 
   /* -------------------------
-     BADGE HOOK
+     PATCH useBadges
   ------------------------- */
 
   function patchBadges() {
     try {
       var mod =
-        findByName(
-          "useBadges",
-          false
-        );
+        findByName("useBadges", false);
 
       if (!mod)
         return false;
 
       var key = null;
 
-      if (
-        typeof mod.default ===
-        "function"
-      ) {
+      if (typeof mod.default === "function") {
         key = "default";
       }
 
       if (
         !key &&
-        typeof mod.useBadges ===
-          "function"
+        typeof mod.useBadges === "function"
       ) {
         key = "useBadges";
       }
@@ -256,19 +382,12 @@
               return ret;
 
             var user =
-              args &&
-              args.length
+              args && args.length
                 ? args[0]
                 : null;
 
-            /*
-             * Only replace YOUR badges.
-             */
-            if (
-              !isCurrentUser(user)
-            ) {
+            if (!isCurrentUser(user))
               return ret;
-            }
 
             return makeBadges();
           } catch (_) {
@@ -277,43 +396,28 @@
         }
       );
 
-      if (
-        typeof unpatch ===
-        "function"
-      ) {
+      if (typeof unpatch === "function") {
         unpatches.push(unpatch);
       }
 
       patchedBadgesModule = mod;
       patchedBadgesKey = key;
 
-      console.log(
-        "[Badge Toggle] useBadges hooked"
-      );
-
       return true;
-    } catch (e) {
-      console.log(
-        "[Badge Toggle] useBadges error",
-        e
-      );
-
+    } catch (_) {
       return false;
     }
   }
 
 
   /* -------------------------
-     BADGE ICON RENDERER
+     PATCH BADGE ICONS
   ------------------------- */
 
   function patchBadgeIcons() {
     try {
       var jsx =
-        findByProps(
-          "jsx",
-          "jsxs"
-        );
+        findByProps("jsx", "jsxs");
 
       if (!jsx)
         return false;
@@ -323,21 +427,13 @@
 
       function handle(args, ret) {
         try {
-          if (
-            !ret ||
-            !ret.props
-          ) {
+          if (!ret || !ret.props)
             return ret;
-          }
 
           var Type = args[0];
 
-          if (
-            typeof Type !==
-            "function"
-          ) {
+          if (typeof Type !== "function")
             return ret;
-          }
 
           var name =
             Type.displayName ||
@@ -345,67 +441,32 @@
             "";
 
           if (
-            name !==
-              "ProfileBadge" &&
-            name !==
-              "RenderedBadge"
+            name !== "ProfileBadge" &&
+            name !== "RenderedBadge"
           ) {
             return ret;
           }
 
-          var id =
-            ret.props.id;
+          var id = ret.props.id;
 
-          if (
-            typeof id !==
-            "string"
-          ) {
+          if (typeof id !== "string")
             return ret;
-          }
 
+          for (var i = 0; i < BADGES.length; i++) {
+            var badge = BADGES[i];
 
-          /* OPAL */
+            if (id !== badgeId(badge))
+              continue;
 
-          if (
-            id ===
-            "larp-premium_tenure_opal"
-          ) {
             ret.props.source = {
-              uri: OPAL
+              uri: CDN + badge.image
             };
 
             ret.props.description =
-              "Nitro · Opal (72+ mo)";
+              badge.description;
 
-            ret.props.onPress =
-              undefined;
-
-            ret.props.onLongPress =
-              undefined;
-
-            return ret;
-          }
-
-
-          /* EARLY SUPPORTER */
-
-          if (
-            id ===
-            "larp-early_supporter"
-          ) {
-            ret.props.source = {
-              uri:
-                EARLY_SUPPORTER
-            };
-
-            ret.props.description =
-              "Early Supporter";
-
-            ret.props.onPress =
-              undefined;
-
-            ret.props.onLongPress =
-              undefined;
+            ret.props.onPress = undefined;
+            ret.props.onLongPress = undefined;
 
             return ret;
           }
@@ -417,60 +478,43 @@
       }
 
 
-      var p1 = after(
-        "jsx",
-        jsx,
-        handle
-      );
+      var p1 =
+        after(
+          "jsx",
+          jsx,
+          handle
+        );
 
-      var p2 = after(
-        "jsxs",
-        jsx,
-        handle
-      );
+      var p2 =
+        after(
+          "jsxs",
+          jsx,
+          handle
+        );
 
-      if (
-        typeof p1 ===
-        "function"
-      ) {
+      if (typeof p1 === "function")
         unpatches.push(p1);
-      }
 
-      if (
-        typeof p2 ===
-        "function"
-      ) {
+      if (typeof p2 === "function")
         unpatches.push(p2);
-      }
 
       patchedJSX = jsx;
 
-      console.log(
-        "[Badge Toggle] JSX hooked"
-      );
-
       return true;
-    } catch (e) {
-      console.log(
-        "[Badge Toggle] JSX error",
-        e
-      );
-
+    } catch (_) {
       return false;
     }
   }
 
 
   /* -------------------------
-     REFRESH PROFILE
+     REFRESH
   ------------------------- */
 
   function refresh() {
     try {
       var UserStore =
-        findByStoreName(
-          "UserStore"
-        );
+        findByStoreName("UserStore");
 
       if (
         UserStore &&
@@ -488,16 +532,10 @@
         "GuildMemberProfileStore"
       ];
 
-      for (
-        var i = 0;
-        i < stores.length;
-        i++
-      ) {
+      for (var i = 0; i < stores.length; i++) {
         try {
           var store =
-            findByStoreName(
-              stores[i]
-            );
+            findByStoreName(stores[i]);
 
           if (
             store &&
@@ -513,7 +551,7 @@
 
 
   /* -------------------------
-     RETRY LOADER
+     RETRY
   ------------------------- */
 
   function startRetry() {
@@ -521,52 +559,38 @@
 
     if (retryTimer) {
       try {
-        clearInterval(
-          retryTimer
-        );
+        clearInterval(retryTimer);
       } catch (_) {}
     }
 
     retryTimer =
-      setInterval(
-        function () {
-          attempts++;
+      setInterval(function () {
+        attempts++;
 
-          var badgeOK =
-            patchBadges();
+        var badgeOK =
+          patchBadges();
 
-          var iconOK =
-            patchBadgeIcons();
+        var iconOK =
+          patchBadgeIcons();
 
-          if (
-            badgeOK &&
-            iconOK
-          ) {
-            try {
-              clearInterval(
-                retryTimer
-              );
-              retryTimer = null;
-            } catch (_) {}
+        if (badgeOK && iconOK) {
+          try {
+            clearInterval(retryTimer);
+          } catch (_) {}
 
-            refresh();
+          retryTimer = null;
 
-            console.log(
-              "[Badge Toggle] ready"
-            );
-          }
+          refresh();
+        }
 
-          if (attempts >= 30) {
-            try {
-              clearInterval(
-                retryTimer
-              );
-              retryTimer = null;
-            } catch (_) {}
-          }
-        },
-        500
-      );
+        if (attempts >= 30) {
+          try {
+            clearInterval(retryTimer);
+          } catch (_) {}
+
+          retryTimer = null;
+        }
+      }, 500);
   }
 
 
@@ -575,6 +599,62 @@
   ------------------------- */
 
   function Settings() {
+    var rows = [];
+
+    rows.push(
+      React.createElement(
+        vendetta.ui.components.Forms.FormSwitchRow,
+        {
+          key: "enabled",
+
+          label: "Enable fake badges",
+
+          subLabel:
+            "Replace your profile badges locally",
+
+          value: !!storage.enabled,
+
+          onValueChange: function (value) {
+            storage.enabled = !!value;
+            refresh();
+          }
+        }
+      )
+    );
+
+
+    for (var i = 0; i < BADGES.length; i++) {
+      var badge = BADGES[i];
+
+      rows.push(
+        React.createElement(
+          vendetta.ui.components.Forms.FormSwitchRow,
+          {
+            key: badge.key,
+
+            label: badge.name,
+
+            subLabel:
+              badge.description,
+
+            value:
+              !!storage[badge.key],
+
+            onValueChange:
+              (function (key) {
+                return function (value) {
+                  storage[key] =
+                    !!value;
+
+                  refresh();
+                };
+              })(badge.key)
+          }
+        )
+      );
+    }
+
+
     return React.createElement(
       RN.ScrollView,
       {
@@ -584,81 +664,13 @@
       },
 
       React.createElement(
-        vendetta.ui.components.Forms
-          .FormSection,
+        vendetta.ui.components.Forms.FormSection,
         {
           title:
             "Fake Profile Badges"
         },
 
-        React.createElement(
-          vendetta.ui.components.Forms
-            .FormSwitchRow,
-          {
-            label:
-              "Replace my badges",
-
-            subLabel:
-              "Locally replace your profile badges",
-
-            value:
-              !!storage.enabled,
-
-            onValueChange:
-              function (value) {
-                storage.enabled =
-                  !!value;
-
-                refresh();
-              }
-          }
-        ),
-
-        React.createElement(
-          vendetta.ui.components.Forms
-            .FormSwitchRow,
-          {
-            label:
-              "Opal Nitro",
-
-            subLabel:
-              "72+ month Nitro badge",
-
-            value:
-              !!storage.opal,
-
-            onValueChange:
-              function (value) {
-                storage.opal =
-                  !!value;
-
-                refresh();
-              }
-          }
-        ),
-
-        React.createElement(
-          vendetta.ui.components.Forms
-            .FormSwitchRow,
-          {
-            label:
-              "Early Supporter",
-
-            subLabel:
-              "Early Supporter badge",
-
-            value:
-              !!storage.early,
-
-            onValueChange:
-              function (value) {
-                storage.early =
-                  !!value;
-
-                refresh();
-              }
-          }
-        )
+        rows
       )
     );
   }
@@ -683,15 +695,14 @@
     onUnload: function () {
       if (retryTimer) {
         try {
-          clearInterval(
-            retryTimer
-          );
+          clearInterval(retryTimer);
         } catch (_) {}
 
         retryTimer = null;
       }
 
       clearPatches();
+
       refresh();
     },
 
