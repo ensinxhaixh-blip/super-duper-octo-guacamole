@@ -5,34 +5,29 @@
   var RN = vendetta.metro.common.ReactNative;
   var findByName = vendetta.metro.findByName;
   var findByProps = vendetta.metro.findByProps;
-  var findByStoreName = vendetta.metro.findByStoreName;
   var after = vendetta.patcher.after;
   var storage = vendetta.plugin.storage;
-  var Forms = vendetta.ui.components.Forms;
 
-  var FormSwitchRow = Forms.FormSwitchRow;
-  var FormSection = Forms.FormSection;
+  var unpatches = [];
 
   var CDN = "https://cdn.discordapp.com/badge-icons/";
 
-  var OPAL_ICON =
+  var OPAL =
     CDN + "5b154df19c53dce2af92c9b61e6be5e2.png";
 
-  var EARLY_SUPPORTER_ICON =
+  var EARLY =
     CDN + "7060786766c9c840eb3019e725d2b358.png";
 
-  if (storage.fakeBadges == null)
-    storage.fakeBadges = true;
+  if (storage.enabled == null)
+    storage.enabled = true;
 
   if (storage.opal == null)
     storage.opal = true;
 
-  if (storage.earlySupporter == null)
-    storage.earlySupporter = true;
+  if (storage.early == null)
+    storage.early = true;
 
-  var unpatches = [];
-
-  function clearPatches() {
+  function clear() {
     for (var i = 0; i < unpatches.length; i++) {
       try {
         unpatches[i]();
@@ -42,132 +37,55 @@
     unpatches = [];
   }
 
-  function getCurrentUser() {
-    try {
-      var UserStore = findByStoreName("UserStore");
-
-      if (
-        UserStore &&
-        typeof UserStore.getCurrentUser === "function"
-      ) {
-        return UserStore.getCurrentUser();
-      }
-    } catch (_) {}
-
-    return null;
-  }
-
-  function getUserId(value) {
-    if (value == null)
-      return null;
-
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "bigint"
-    ) {
-      return String(value);
-    }
-
-    if (typeof value !== "object")
-      return null;
-
-    if (value.userId != null)
-      return String(value.userId);
-
-    if (value.id != null)
-      return String(value.id);
-
-    if (
-      value.user &&
-      typeof value.user === "object"
-    ) {
-      if (value.user.userId != null)
-        return String(value.user.userId);
-
-      if (value.user.id != null)
-        return String(value.user.id);
-    }
-
-    if (
-      value.member &&
-      value.member.user
-    ) {
-      if (value.member.user.id != null)
-        return String(value.member.user.id);
-
-      if (value.member.user.userId != null)
-        return String(value.member.user.userId);
-    }
-
-    if (
-      value.profile &&
-      value.profile.user
-    ) {
-      if (value.profile.user.id != null)
-        return String(value.profile.user.id);
-    }
-
-    return null;
-  }
-
-  function isOwnProfile(value) {
-    var current = getCurrentUser();
-
-    if (!current || current.id == null)
-      return false;
-
-    var target = getUserId(value);
-
-    return (
-      target != null &&
-      String(target) === String(current.id)
-    );
-  }
-
-  function createFakeBadges() {
-    var result = [];
+  function makeBadges() {
+    var badges = [];
 
     if (storage.opal) {
-      result.push({
-        id: "badge-toggle-opal",
+      badges.push({
+        id: "larp-premium_tenure_opal",
         description: "Nitro · Opal (72+ mo)",
         icon: " "
       });
     }
 
-    if (storage.earlySupporter) {
-      result.push({
-        id: "badge-toggle-early-supporter",
+    if (storage.early) {
+      badges.push({
+        id: "larp-early_supporter",
         description: "Early Supporter",
         icon: " "
       });
     }
 
-    return result;
+    return badges;
   }
 
   function patchBadges() {
     try {
       var mod = findByName("useBadges", false);
 
-      if (!mod)
+      if (!mod) {
+        console.log(
+          "[Badge Toggle] useBadges not found"
+        );
         return;
+      }
 
       var key = null;
 
-      if (typeof mod.default === "function")
+      if (typeof mod.default === "function") {
         key = "default";
-
-      if (
-        !key &&
+      } else if (
         typeof mod.useBadges === "function"
       ) {
         key = "useBadges";
       }
 
-      if (!key)
+      if (!key) {
+        console.log(
+          "[Badge Toggle] useBadges function not found"
+        );
         return;
+      }
 
       unpatches.push(
         after(
@@ -175,50 +93,56 @@
           mod,
           function (args, ret) {
             try {
-              if (!storage.fakeBadges)
+              if (!storage.enabled)
                 return ret;
 
               if (!Array.isArray(ret))
                 return ret;
 
-              var user =
-                args && args.length
-                  ? args[0]
-                  : null;
+              return makeBadges();
+            } catch (e) {
+              console.log(
+                "[Badge Toggle] badge error",
+                e
+              );
 
-              if (!isOwnProfile(user))
-                return ret;
-
-              return createFakeBadges();
-            } catch (_) {
               return ret;
             }
           }
         )
       );
-    } catch (_) {}
+
+      console.log(
+        "[Badge Toggle] useBadges patched"
+      );
+    } catch (e) {
+      console.log(
+        "[Badge Toggle] patch failed",
+        e
+      );
+    }
   }
 
-  function patchBadgeImages() {
+  function patchIcons() {
     try {
       var jsx = findByProps("jsx", "jsxs");
 
       if (!jsx)
         return;
 
-      function patchJSX(args, ret) {
+      function handle(args, ret) {
         try {
           if (!ret || !ret.props)
             return ret;
 
-          var Type = args[0];
+          var component = args[0];
 
-          if (typeof Type !== "function")
+          if (typeof component !== "function")
             return ret;
 
           var name =
-            Type.displayName ||
-            Type.name ||
+            component.displayName ||
+            component.name ||
             "";
 
           if (
@@ -230,33 +154,30 @@
 
           var id = ret.props.id;
 
-          if (id === "badge-toggle-opal") {
+          if (
+            id ===
+            "larp-premium_tenure_opal"
+          ) {
             ret.props.source = {
-              uri: OPAL_ICON
+              uri: OPAL
             };
 
             ret.props.description =
               "Nitro · Opal (72+ mo)";
-
-            ret.props.onPress = undefined;
-            ret.props.onLongPress = undefined;
 
             return ret;
           }
 
           if (
             id ===
-            "badge-toggle-early-supporter"
+            "larp-early_supporter"
           ) {
             ret.props.source = {
-              uri: EARLY_SUPPORTER_ICON
+              uri: EARLY
             };
 
             ret.props.description =
               "Early Supporter";
-
-            ret.props.onPress = undefined;
-            ret.props.onLongPress = undefined;
 
             return ret;
           }
@@ -271,7 +192,7 @@
         after(
           "jsx",
           jsx,
-          patchJSX
+          handle
         )
       );
 
@@ -279,35 +200,9 @@
         after(
           "jsxs",
           jsx,
-          patchJSX
+          handle
         )
       );
-    } catch (_) {}
-  }
-
-  function refreshProfile() {
-    try {
-      var stores = [
-        "UserStore",
-        "UserProfileStore",
-        "UserProfileStoreV2",
-        "GuildMemberProfileStore"
-      ];
-
-      for (var i = 0; i < stores.length; i++) {
-        try {
-          var store =
-            findByStoreName(stores[i]);
-
-          if (
-            store &&
-            typeof store.emitChange ===
-              "function"
-          ) {
-            store.emitChange();
-          }
-        } catch (_) {}
-      }
     } catch (_) {}
   }
 
@@ -321,36 +216,37 @@
       },
 
       React.createElement(
-        FormSection,
+        vendetta.ui.components.Forms.FormSection,
         {
-          title: "Fake Profile Badges"
+          title: "Badge Toggle"
         },
 
         React.createElement(
-          FormSwitchRow,
+          vendetta.ui.components.Forms.FormSwitchRow,
           {
-            label: "Replace my badges",
+            label: "Fake badges",
             subLabel:
-              "Locally replaces your profile badges",
+              "Replace profile badges locally",
+
             value:
-              !!storage.fakeBadges,
+              !!storage.enabled,
 
             onValueChange:
               function (value) {
-                storage.fakeBadges =
+                storage.enabled =
                   !!value;
 
-                refreshProfile();
+                clear();
+                patchBadges();
+                patchIcons();
               }
           }
         ),
 
         React.createElement(
-          FormSwitchRow,
+          vendetta.ui.components.Forms.FormSwitchRow,
           {
             label: "Opal Nitro",
-            subLabel:
-              "Nitro Opal badge",
             value:
               !!storage.opal,
 
@@ -358,27 +254,21 @@
               function (value) {
                 storage.opal =
                   !!value;
-
-                refreshProfile();
               }
           }
         ),
 
         React.createElement(
-          FormSwitchRow,
+          vendetta.ui.components.Forms.FormSwitchRow,
           {
             label: "Early Supporter",
-            subLabel:
-              "Early Supporter badge",
             value:
-              !!storage.earlySupporter,
+              !!storage.early,
 
             onValueChange:
               function (value) {
-                storage.earlySupporter =
+                storage.early =
                   !!value;
-
-                refreshProfile();
               }
           }
         )
@@ -388,17 +278,14 @@
 
   return {
     onLoad: function () {
-      clearPatches();
+      clear();
 
       patchBadges();
-      patchBadgeImages();
-
-      refreshProfile();
+      patchIcons();
     },
 
     onUnload: function () {
-      clearPatches();
-      refreshProfile();
+      clear();
     },
 
     settings: Settings
