@@ -22,7 +22,7 @@
    * general/profile -> legacy/program -> Nitro -> boosting ->
    * experimental progression families -> app/developer.
    *
-   * Every switch is independent. This is a LOCAL visual spoof only.
+   * Every switch is independent. This is a LOCAL visual spoof only. Profile identity/decoration hooks are intentionally disabled for stability.
    */
   var SECTIONS = [
     {
@@ -172,17 +172,9 @@
   }
 
   if (storage.enabled == null) storage.enabled = true;
-  if (storage.profileEnabled == null) storage.profileEnabled = false;
-  if (storage.fakeUsername == null) storage.fakeUsername = "";
-  if (storage.fakeGlobalName == null) storage.fakeGlobalName = "";
-  if (storage.fakeJoinDate == null) storage.fakeJoinDate = "";
-  if (storage.fakeDecorationEnabled == null) storage.fakeDecorationEnabled = false;
-  if (storage.fakeDecorationAsset == null) storage.fakeDecorationAsset = "";
-  if (storage.fakeDecorationSku == null) storage.fakeDecorationSku = "";
 
   var unpatches = [];
   var retryTimer = null;
-  var patchTimer = null;
   var patchedHook = false;
   var patchedJsx = false;
 
@@ -235,78 +227,6 @@
       _badgeToggle: true,
       _badgeToggleKey: b.key
     };
-  }
-
-  function profileData() {
-    return {
-      username: String(storage.fakeUsername || "").trim(),
-      global_name: String(storage.fakeGlobalName || "").trim(),
-      display_name: String(storage.fakeGlobalName || "").trim(),
-      joinDate: String(storage.fakeJoinDate || "").trim(),
-      decoration: String(storage.fakeDecorationAsset || "").trim(),
-      decorationSku: String(storage.fakeDecorationSku || "").trim()
-    };
-  }
-
-  function decorateUserObject(user) {
-    if (!storage.profileEnabled || !user || !isCurrentUser(user.id)) return user;
-    var p = profileData();
-    var copy = {};
-    for (var k in user) if (Object.prototype.hasOwnProperty.call(user, k)) copy[k] = user[k];
-    if (p.username) copy.username = p.username;
-    if (p.global_name) copy.global_name = p.global_name;
-    if (p.global_name) copy.globalName = p.global_name;
-    if (p.joinDate) copy.created_at = p.joinDate;
-    if (p.joinDate) copy.createdAt = p.joinDate;
-    if (storage.fakeDecorationEnabled && p.decoration) {
-      copy.avatar_decoration_data = { asset: p.decoration, sku_id: p.decorationSku || "0" };
-      copy.avatarDecoration = { asset: p.decoration, skuId: p.decorationSku || "0" };
-    }
-    return copy;
-  }
-
-  function patchUserStore() {
-    var store = safe(function () { return findByStoreName("UserStore"); });
-    if (!store) return false;
-    var did = false;
-    ["getCurrentUser", "getUser", "getUserById"].forEach(function (name) {
-      if (typeof store[name] !== "function") return;
-      try {
-        var un = after(name, store, function (args, ret) {
-          if (!ret || typeof ret !== "object") return ret;
-          var id = ret.id;
-          if (!id && args && args[0]) id = typeof args[0] === "object" ? args[0].id : args[0];
-          return isCurrentUser(id) ? decorateUserObject(ret) : ret;
-        });
-        if (typeof un === "function") unpatches.push(un);
-        did = true;
-      } catch (_) {}
-    });
-    return did;
-  }
-
-  function patchCreationDate() {
-    if (!storage.profileEnabled || !storage.fakeJoinDate) return false;
-    var mod = safe(function () { return findByName("getUserCreationDate", false); });
-    if (!mod) return false;
-    var target = null, method = null;
-    if (typeof mod === "function") target = mod;
-    else if (typeof mod.getUserCreationDate === "function") { target = mod; method = "getUserCreationDate"; }
-    else if (typeof mod.default === "function") { target = mod; method = "default"; }
-    if (!target) return false;
-    try {
-      var un;
-      if (method === null) un = after(target, function (args, ret) {
-        var id = args && args[0] && typeof args[0] === "object" ? args[0].id : args && args[0];
-        return isCurrentUser(id) ? new Date(storage.fakeJoinDate) : ret;
-      });
-      else un = after(method, target, function (args, ret) {
-        var id = args && args[0] && typeof args[0] === "object" ? args[0].id : args && args[0];
-        return isCurrentUser(id) ? new Date(storage.fakeJoinDate) : ret;
-      });
-      if (typeof un === "function") unpatches.push(un);
-      return true;
-    } catch (_) { return false; }
   }
 
   function patchUseBadges() {
@@ -467,8 +387,6 @@
   }
 
   function tryPatch() {
-    patchUserStore();
-    patchCreationDate();
     patchUseBadges();
     patchJsx();
 
@@ -477,6 +395,8 @@
         clearInterval(retryTimer);
         retryTimer = null;
       }
+    }
+  }
     }
   }
 
@@ -502,59 +422,6 @@
 
   function Settings() {
     var children = [];
-
-    children.push(React.createElement(
-      FormSection,
-      { title: "Fake Profile" },
-      React.createElement(FormSwitchRow, {
-        label: "Enable fake profile",
-        subLabel: "Local-only username, join date and decoration",
-        value: !!storage.profileEnabled,
-        onValueChange: function (v) { storage.profileEnabled = !!v; refresh(); }
-      }),
-      React.createElement(FormSwitchRow, {
-        label: "Enable fake avatar decoration",
-        subLabel: "Uses a Discord avatar-decoration asset hash",
-        value: !!storage.fakeDecorationEnabled,
-        onValueChange: function (v) { storage.fakeDecorationEnabled = !!v; refresh(); }
-      }),
-      React.createElement(RN.View, { style: { paddingHorizontal: 16, paddingVertical: 8 } },
-        React.createElement(RN.TextInput, {
-          placeholder: "Fake username",
-          value: storage.fakeUsername,
-          onChangeText: function (v) { storage.fakeUsername = v; refresh(); },
-          autoCapitalize: "none",
-          style: { padding: 12, borderRadius: 8, backgroundColor: "rgba(128,128,128,0.15)", color: "#fff", marginBottom: 8 }
-        }),
-        React.createElement(RN.TextInput, {
-          placeholder: "Fake display/global name",
-          value: storage.fakeGlobalName,
-          onChangeText: function (v) { storage.fakeGlobalName = v; refresh(); },
-          style: { padding: 12, borderRadius: 8, backgroundColor: "rgba(128,128,128,0.15)", color: "#fff", marginBottom: 8 }
-        }),
-        React.createElement(RN.TextInput, {
-          placeholder: "Fake join date (ISO, e.g. 2018-06-12T00:00:00.000Z)",
-          value: storage.fakeJoinDate,
-          onChangeText: function (v) { storage.fakeJoinDate = v; refresh(); },
-          autoCapitalize: "none",
-          style: { padding: 12, borderRadius: 8, backgroundColor: "rgba(128,128,128,0.15)", color: "#fff", marginBottom: 8 }
-        }),
-        React.createElement(RN.TextInput, {
-          placeholder: "Decoration asset hash (e.g. a_...png hash)",
-          value: storage.fakeDecorationAsset,
-          onChangeText: function (v) { storage.fakeDecorationAsset = v; refresh(); },
-          autoCapitalize: "none",
-          style: { padding: 12, borderRadius: 8, backgroundColor: "rgba(128,128,128,0.15)", color: "#fff", marginBottom: 8 }
-        }),
-        React.createElement(RN.TextInput, {
-          placeholder: "Decoration SKU ID (optional)",
-          value: storage.fakeDecorationSku,
-          onChangeText: function (v) { storage.fakeDecorationSku = v; refresh(); },
-          autoCapitalize: "none",
-          style: { padding: 12, borderRadius: 8, backgroundColor: "rgba(128,128,128,0.15)", color: "#fff" }
-        })
-      )
-    ));
 
     children.push(React.createElement(
       FormSection,
@@ -608,12 +475,10 @@
   return {
     onLoad: function () {
       startPatching();
-      patchTimer = setInterval(startPatching, 3000);
     },
 
     onUnload: function () {
       if (retryTimer) clearInterval(retryTimer);
-      if (patchTimer) clearInterval(patchTimer);
       retryTimer = null;
       patchTimer = null;
       clearPatches();
