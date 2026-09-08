@@ -1,8 +1,8 @@
 {
   "name": "Badge Toggle",
-  "description": "69 local visual badge toggles. Preserves real Discord badges and appends selected local badges.",
-  "authors": [{"name":"ensinxhaixh"}],
+  "description": "69 local visual badge toggles with experimental renderer-only avatar decorations. Real badges are replaced locally.",
+  "authors": ["ensinxhaixh-blip"],
   "main": "index.js",
-  "version": "1.5.0",
-  "hash": "badgetoggle-real-plus-fake-v2"
+  "hash": "badgetoggle-replace-real-badges-decor-resolver-v3",
+  "version": "1.6.0"
 }
