@@ -172,6 +172,25 @@
   }
 
   if (storage.enabled == null) storage.enabled = true;
+
+  var DECORATIONS = [
+    ["decor-angry", "Angry", "a_3c97a2d37f433a7913a1c7b7a735d000"],
+    ["decor-owlbear", "Owlbear Cub", "a_3c5743cedcb72131c58278278a97c143"],
+    ["decor-straw-hat", "Straw Hat", "a_3d1e6078b2e4c8865e0ad0f429d651b1"],
+    ["decor-heartbloom", "Heartbloom", "a_3e1fc3c7ee2e34e8176f4737427e8f4f"],
+    ["decor-candlelight", "Candlelight", "a_3f29e6edfe1cff43736f644cf1d01278"],
+    ["decor-butterflies", "Butterflies", "a_4cd9ae5a8d103c219eacd3674d7730cd"],
+    ["decor-ufo", "UFO", "a_6fdbddb6229453eac3bbb212edf5cd1c"],
+    ["decor-sakura", "Sakura Warrior", "a_7cf09c7e78d6eb35ae354acc1d5cc676"],
+    ["decor-love", "In Love", "a_8ffa2ba9bff18e96b76c2e66fd0d7fa3"],
+    ["decor-solar", "Solar Orbit", "a_9a6bf0ab30a6719d6eb09fa4996984ca"],
+    ["decor-ruby", "Ruby Hearts", "a_a1c0581971d4a296908829289fea2c47"],
+    ["decor-fire", "Fire", "a_a065206df7b011a5510e4e5bca7d49be"]
+  ];
+  if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
+  for (var di = 0; di < DECORATIONS.length; di++) {
+    if (storage[DECORATIONS[di][0]] == null) storage[DECORATIONS[di][0]] = false;
+  }
   if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
 
   var unpatches = [];
@@ -299,6 +318,64 @@
       return copy;
     }
     return list;
+  }
+
+  var decorUnpatches = [];
+  var decorPatched = false;
+
+  function enabledDecoration() {
+    if (!storage.decorationsEnabled) return null;
+    for (var i = 0; i < DECORATIONS.length; i++) {
+      if (storage[DECORATIONS[i][0]]) return DECORATIONS[i];
+    }
+    return null;
+  }
+
+  function decorateUser(user) {
+    var d = enabledDecoration();
+    if (!d || !user || !user.id) return user;
+    var copy = {};
+    for (var k in user) if (Object.prototype.hasOwnProperty.call(user, k)) copy[k] = user[k];
+    var data = { asset: d[2], sku_id: "0" };
+    copy.avatar_decoration_data = data;
+    copy.avatarDecorationData = data;
+    copy.avatarDecoration = { asset: d[2], sku_id: "0" };
+    return copy;
+  }
+
+  function patchDecorations() {
+    if (decorPatched || !storage.decorationsEnabled) return decorPatched;
+    var store = safe(function () { return findByStoreName("UserStore"); });
+    if (!store) return false;
+    var did = false;
+    ["getCurrentUser", "getUser", "getUserById"].forEach(function (name) {
+      if (typeof store[name] !== "function") return;
+      try {
+        var un = after(name, store, function (args, ret) {
+          try {
+            if (!ret || typeof ret !== "object") return ret;
+            var id = ret.id;
+            if (!id && args && args.length) {
+              var a = args[0];
+              id = a && typeof a === "object" ? a.id : a;
+            }
+            var me = currentUserId();
+            if (me == null || id == null || String(id) !== String(me)) return ret;
+            return decorateUser(ret);
+          } catch (_) { return ret; }
+        });
+        if (typeof un === "function") decorUnpatches.push(un);
+        did = true;
+      } catch (_) {}
+    });
+    decorPatched = did;
+    return did;
+  }
+
+  function clearDecorationPatches() {
+    for (var i = 0; i < decorUnpatches.length; i++) safe(decorUnpatches[i]);
+    decorUnpatches = [];
+    decorPatched = false;
   }
 
   function refresh() {
@@ -437,6 +514,7 @@
       if (retryTimer) clearInterval(retryTimer);
       retryTimer = null;
       clearPatches();
+      clearDecorationPatches();
       refresh();
     },
 
