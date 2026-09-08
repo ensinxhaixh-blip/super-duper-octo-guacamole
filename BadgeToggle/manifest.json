@@ -1,13 +1,13 @@
 {
   "name": "Badge Toggle",
-  "description": "Client-side toggle to show or hide all user badges everywhere",
+  "description": "Client-side toggle to show or hide user badges",
   "authors": [
     {
-      "name": "Grok",
-      "id": "0"
+      "name": "Grok"
     }
   ],
   "main": "index.js",
+  "hash": "4c5c30847576c049",
   "vendetta": {
     "icon": "ic_badge_staff"
   }
