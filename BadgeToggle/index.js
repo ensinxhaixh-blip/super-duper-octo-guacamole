@@ -4,6 +4,7 @@
   var React = vendetta.metro.common.React;
   var RN = vendetta.metro.common.ReactNative;
   var findByName = vendetta.metro.findByName;
+  var findByProps = vendetta.metro.findByProps;
   var findByStoreName = vendetta.metro.findByStoreName;
   var after = vendetta.patcher.after;
   var storage = vendetta.plugin.storage;
@@ -11,7 +12,6 @@
 
   var FormSwitchRow = Forms.FormSwitchRow;
   var FormSection = Forms.FormSection;
-  var FormInput = Forms.FormInput || RN.TextInput;
 
   var CDN = "https://cdn.discordapp.com/badge-icons";
   var OPAL = CDN + "/5b154df19c53dce2af92c9b61e6be5e2.png";
@@ -22,7 +22,6 @@
    * experimental progression families -> app/developer.
    *
    * Every switch is independent. This is a LOCAL visual spoof only.
-   * Stability build: badge-hook only; no UserStore/profile/creation-date/decoration/JSX hooks.
    */
   var SECTIONS = [
     {
@@ -172,11 +171,12 @@
   }
 
   if (storage.enabled == null) storage.enabled = true;
-  if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
 
   var unpatches = [];
   var retryTimer = null;
+  var patchTimer = null;
   var patchedHook = false;
+  var patchedJsx = false;
 
   function safe(fn) {
     try { return fn(); } catch (_) { return null; }
@@ -188,6 +188,7 @@
     }
     unpatches = [];
     patchedHook = false;
+    patchedJsx = false;
   }
 
   function currentUserId() {
@@ -227,7 +228,6 @@
       _badgeToggleKey: b.key
     };
   }
-
 
   function patchUseBadges() {
     if (patchedHook) return true;
@@ -286,40 +286,89 @@
 
     if (!uid || !isCurrentUser(uid)) return ret;
 
-    var fake = enabledBadges().map(badgePayload);
-    if (!fake.length) return ret;
+    var list = enabledBadges().map(badgePayload);
 
-    if (Array.isArray(ret)) {
-      var merged = ret.slice();
-      for (var i = 0; i < fake.length; i++) {
-        var exists = false;
-        for (var j = 0; j < merged.length; j++) {
-          if (merged[j] && merged[j]._badgeToggleKey === fake[i]._badgeToggleKey) { exists = true; break; }
-        }
-        if (!exists) merged.push(fake[i]);
-      }
-      return merged;
-    }
-
+    if (Array.isArray(ret)) return list;
     if (ret && typeof ret === "object") {
       var copy = {};
       for (var k in ret) {
         if (Object.prototype.hasOwnProperty.call(ret, k)) copy[k] = ret[k];
       }
-      var base = Array.isArray(ret.badges) ? ret.badges.slice() : (Array.isArray(ret.items) ? ret.items.slice() : []);
-      for (var f = 0; f < fake.length; f++) {
-        var dup = false;
-        for (var q = 0; q < base.length; q++) {
-          if (base[q] && base[q]._badgeToggleKey === fake[f]._badgeToggleKey) { dup = true; break; }
-        }
-        if (!dup) base.push(fake[f]);
-      }
-      copy.badges = base;
-      if (Array.isArray(ret.items)) copy.items = base;
+      copy.badges = list;
+      copy.items = list;
       return copy;
     }
+    return list;
+  }
 
-    return ret;
+  function patchJsx() {
+    if (patchedJsx) return true;
+
+    var jsx = safe(function () { return findByProps("jsx", "jsxs"); });
+    if (!jsx) return false;
+
+    var methods = ["jsx", "jsxs"];
+    var did = false;
+
+    for (var i = 0; i < methods.length; i++) {
+      var name = methods[i];
+      if (typeof jsx[name] !== "function") continue;
+
+      try {
+        var un = after(name, jsx, function (args, ret) {
+          try {
+            if (!ret || !ret.props) return ret;
+
+            var type = ret.type;
+            var typeName = "";
+            if (type) typeName = String(type.displayName || type.name || "");
+
+            if (typeName !== "ProfileBadge" &&
+                typeName !== "RenderedBadge" &&
+                typeName.indexOf("ProfileBadge") === -1 &&
+                typeName.indexOf("RenderedBadge") === -1) {
+              return ret;
+            }
+
+            var props = ret.props;
+            var id = props.id || props.badgeId || props.badge && props.badge.id;
+            var meta = null;
+
+            for (var j = 0; j < BADGES.length; j++) {
+              if ("badgetoggle-" + BADGES[j].key === String(id)) {
+                meta = BADGES[j];
+                break;
+              }
+            }
+
+            if (!meta) {
+              var src = props.source;
+              if (src && typeof src === "object" && src.uri) {
+                for (var z = 0; z < BADGES.length; z++) {
+                  if (src.uri === BADGES[z].url) {
+                    meta = BADGES[z];
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (meta) {
+              props.source = { uri: meta.url };
+              props.uri = meta.url;
+              props.image = { uri: meta.url };
+            }
+          } catch (_) {}
+          return ret;
+        });
+
+        if (typeof un === "function") unpatches.push(un);
+        did = true;
+      } catch (_) {}
+    }
+
+    if (did) patchedJsx = true;
+    return did;
   }
 
   function refresh() {
@@ -338,27 +387,30 @@
   }
 
   function tryPatch() {
-    if (patchUseBadges()) {
+    patchUseBadges();
+    patchJsx();
+
+    if (patchedHook && patchedJsx) {
       if (retryTimer) {
         clearInterval(retryTimer);
         retryTimer = null;
       }
-      return true;
     }
-    return false;
   }
 
   function startPatching() {
-    if (tryPatch()) return;
-    if (retryTimer) return;
-    var attempts = 0;
-    retryTimer = setInterval(function () {
-      attempts++;
-      if (tryPatch() || attempts >= 60) {
-        clearInterval(retryTimer);
-        retryTimer = null;
-      }
-    }, 500);
+    tryPatch();
+    if (!retryTimer) {
+      var attempts = 0;
+      retryTimer = setInterval(function () {
+        attempts++;
+        tryPatch();
+        if (attempts >= 60) {
+          clearInterval(retryTimer);
+          retryTimer = null;
+        }
+      }, 500);
+    }
   }
 
   function setBadge(key, value) {
@@ -408,7 +460,6 @@
       ));
     }
 
-
     return React.createElement(
       RN.ScrollView,
       {
@@ -422,11 +473,14 @@
   return {
     onLoad: function () {
       startPatching();
+      patchTimer = setInterval(startPatching, 3000);
     },
 
     onUnload: function () {
       if (retryTimer) clearInterval(retryTimer);
+      if (patchTimer) clearInterval(patchTimer);
       retryTimer = null;
+      patchTimer = null;
       clearPatches();
       refresh();
     },
