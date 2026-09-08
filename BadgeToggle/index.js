@@ -1,3 +1,5 @@
+const main = "index.js";
+
 import { findByProps, findByStoreName } from "@vendetta/metro";
 import { instead, after } from "@vendetta/patcher";
 import { storage } from "@vendetta/plugin";
@@ -28,19 +30,18 @@ function applyPatches() {
   ].filter(Boolean);
 
   for (const mod of possibleModules) {
-    // Patch getBadges / getUserBadges style functions
     if (typeof mod.getBadges === "function") {
       unpatches.push(
         instead("getBadges", mod, () => [])
       );
     }
+
     if (typeof mod.getUserBadges === "function") {
       unpatches.push(
         instead("getUserBadges", mod, () => [])
       );
     }
 
-    // Some versions expose badges on the profile object
     if (mod.getUserProfile) {
       unpatches.push(
         after("getUserProfile", mod, (_, ret) => {
@@ -78,12 +79,21 @@ export default {
   },
 
   settings: () => (
-    <RN.ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+    <RN.ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 40 }}
+    >
       <FormSection title="Badge Toggle">
         <FormSwitchRow
           label="Show badges"
           subLabel="When disabled, all user badges are hidden client-side"
-          leading={<Forms.FormIcon source={RN.Image.resolveAssetSource({ uri: "ic_badge_staff" })} />}
+          leading={
+            <Forms.FormIcon
+              source={RN.Image.resolveAssetSource({
+                uri: "ic_badge_staff"
+              })}
+            />
+          }
           value={storage.showBadges}
           onValueChange={(v) => {
             storage.showBadges = v;
