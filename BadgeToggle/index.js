@@ -10,16 +10,30 @@ storage.showBadges ??= true;
 
 let unpatches = [];
 
-function applyPatches() {
-  unpatches.forEach((unpatch) => {
+function clearPatches() {
+  for (const unpatch of unpatches) {
     try {
       unpatch();
     } catch {}
-  });
+  }
 
   unpatches = [];
+}
 
-  // Badges enabled: don't apply any patches.
+function addPatch(patch) {
+  try {
+    const unpatch = patch();
+
+    if (typeof unpatch === "function") {
+      unpatches.push(unpatch);
+    }
+  } catch {}
+}
+
+function applyPatches() {
+  clearPatches();
+
+  // Badges are enabled, so leave Discord untouched.
   if (storage.showBadges) return;
 
   const possibleModules = [
@@ -30,47 +44,69 @@ function applyPatches() {
     findByStoreName("UserProfileStore"),
   ].filter(Boolean);
 
-  for (const mod of possibleModules) {
+  // Prevent the same module from being patched more than once.
+  const modules = [...new Set(possibleModules)];
+
+  for (const mod of modules) {
     if (typeof mod.getBadges === "function") {
-      unpatches.push(
+      addPatch(() =>
         instead("getBadges", mod, () => [])
       );
     }
 
     if (typeof mod.getUserBadges === "function") {
-      unpatches.push(
+      addPatch(() =>
         instead("getUserBadges", mod, () => [])
       );
     }
 
     if (typeof mod.getUserProfile === "function") {
-      unpatches.push(
+      addPatch(() =>
         after("getUserProfile", mod, (_, ret) => {
-          if (ret) {
-            ret.badges = [];
-
-            if (ret.user) {
-              ret.user.badges = [];
-            }
+          if (!ret || typeof ret !== "object") {
+            return ret;
           }
 
-          return ret;
+          // Don't mutate Discord's cached profile object.
+          return {
+            ...ret,
+            badges: [],
+            user:
+              ret.user && typeof ret.user === "object"
+                ? {
+                    ...ret.user,
+                    badges: [],
+                  }
+                : ret.user,
+          };
         })
       );
     }
   }
 
+  /*
+   * Fallback for UI components.
+   *
+   * Only patch the two known badge components.
+   * Do NOT patch every function exported by the module.
+   */
   try {
     const BadgeComponents =
-      findByProps("Badge", "ProfileBadge") || {};
+      findByProps("Badge", "ProfileBadge");
 
-    Object.keys(BadgeComponents).forEach((key) => {
-      if (typeof BadgeComponents[key] === "function") {
-        unpatches.push(
-          instead(key, BadgeComponents, () => null)
-        );
+    if (BadgeComponents) {
+      for (const key of ["Badge", "ProfileBadge"]) {
+        if (typeof BadgeComponents[key] === "function") {
+          addPatch(() =>
+            instead(
+              key,
+              BadgeComponents,
+              () => null
+            )
+          );
+        }
       }
-    });
+    }
   } catch {}
 }
 
@@ -80,13 +116,7 @@ export default {
   },
 
   onUnload() {
-    unpatches.forEach((unpatch) => {
-      try {
-        unpatch();
-      } catch {}
-    });
-
-    unpatches = [];
+    clearPatches();
   },
 
   settings: () => (
@@ -97,11 +127,11 @@ export default {
       <FormSection title="Badge Toggle">
         <FormSwitchRow
           label="Show badges"
-          subLabel="When disabled, all user badges are hidden client-side"
+          subLabel="When disabled, user badges are hidden client-side"
           leading={
             <Forms.FormIcon
               source={RN.Image.resolveAssetSource({
-                uri: "ic_badge_staff"
+                uri: "ic_badge_staff",
               })}
             />
           }
