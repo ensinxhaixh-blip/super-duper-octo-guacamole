@@ -4,10 +4,14 @@
   var React = vendetta.metro.common.React;
   var RN = vendetta.metro.common.ReactNative;
   var findByName = vendetta.metro.findByName;
+  var findByNameAll = vendetta.metro.findByNameAll;
+  var findByDisplayName = vendetta.metro.findByDisplayName;
+  var findByDisplayNameAll = vendetta.metro.findByDisplayNameAll;
   var findByProps = vendetta.metro.findByProps;
   var findByStoreName = vendetta.metro.findByStoreName;
   var findAll = vendetta.metro.findAll;
   var after = vendetta.patcher.after;
+  var before = vendetta.patcher.before;
   var storage = vendetta.plugin.storage;
   var Forms = vendetta.ui.components.Forms;
 
@@ -176,6 +180,77 @@
     return patched;
   }
 
+  // Kettu's iOS Discord build does not expose the same source-level patch
+  // API that desktop Vencord uses. The reliable fallback is to patch the
+  // avatar component's input props, before Discord renders it.
+  var avatarComponentPatched = false;
+
+  function patchAvatarComponentTarget(target, method) {
+    if (!target) return false;
+    try {
+      var cb = function (args) {
+        try {
+          if (!storage.decorationsEnabled) return;
+          if (!args || !args.length || !args[0] || typeof args[0] !== "object") return;
+          var props = args[0];
+          var uid = null;
+          if (props.user && props.user.id != null) uid = String(props.user.id);
+          else if (props.currentUser && props.currentUser.id != null) uid = String(props.currentUser.id);
+          else if (props.userId != null) uid = String(props.userId);
+          if (!uid || uid !== currentUserId()) return;
+          var d = decorationObject();
+          if (!d) return;
+          // Discord's avatar renderer recognizes these props when present.
+          props.avatarDecorationOverride = d;
+          props.avatarDecoration = d;
+        } catch (_) {}
+      };
+      var un = method === null ? before(target, cb) : before(method, target, cb);
+      if (typeof un === "function") decorUnpatches.push(un);
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function patchNamedAvatarComponents() {
+    if (avatarComponentPatched) return true;
+    var names = [
+      "Avatar",
+      "UserAvatar",
+      "AvatarWithDecoration",
+      "UserAvatarWithDecoration",
+      "AvatarDecoration",
+      "AvatarDecorationRenderer"
+    ];
+    var found = 0;
+    var seen = [];
+    function addTarget(mod) {
+      if (!mod) return;
+      var target = null, method = null;
+      if (typeof mod === "function") target = mod;
+      else if (typeof mod.default === "function") { target = mod; method = "default"; }
+      else if (typeof mod.render === "function") { target = mod; method = "render"; }
+      if (!target) return;
+      if (seen.indexOf(target) !== -1) return;
+      seen.push(target);
+      if (patchAvatarComponentTarget(target, method)) found++;
+    }
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      try {
+        var arr = typeof findByNameAll === "function" ? findByNameAll(name, false) : [];
+        if (Array.isArray(arr) && arr.length) arr.forEach(addTarget);
+        else addTarget(safe(function () { return findByName(name, false); }));
+      } catch (_) {}
+      try {
+        var arr2 = typeof findByDisplayNameAll === "function" ? findByDisplayNameAll(name, false) : [];
+        if (Array.isArray(arr2)) arr2.forEach(addTarget);
+        else addTarget(safe(function () { return findByDisplayName(name, false); }));
+      } catch (_) {}
+    }
+    if (found) avatarComponentPatched = true;
+    return found > 0;
+  }
+
   function patchDecorationHook() {
     if (decorPatched) return true;
 
@@ -286,10 +361,10 @@
 
   function patchDecorations() {
     if (!storage.decorationsEnabled) return true;
+    var avatar = patchNamedAvatarComponents();
     patchDecorationHook();
     patchDecorationResolver();
-    var deep = patchDeepDecorationHooks();
-    return decorPatched || decorResolverPatched || deep > 0;
+    return avatar || decorPatched || decorResolverPatched;
   }
 
   function clearDecorationPatches() {
@@ -302,6 +377,7 @@
     decorPatched = false;
     decorResolverPatched = false;
     decorJSXPatched = false;
+    avatarComponentPatched = false;
   }
 
 
