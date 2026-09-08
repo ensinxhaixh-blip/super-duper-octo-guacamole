@@ -1,8 +1,9 @@
 {
-  "name": "BadgeToggle",
-  "description": "69 local visual badge toggles with original badges replaced, plus experimental local avatar decorations.",
-  "authors": ["ensinxhaixh"],
+  "name": "Badge Toggle",
+  "description": "69 local visual badge toggles plus a renderer-only avatar decoration overlay. Real badges are replaced locally.",
+  "authors": ["ensinxhaixh-blip"],
   "main": "index.js",
-  "hash": "badgetoggle-real-badges-avatar-component-v7",
-  "version": "1.6.4"
+  "vendetta": { "icon": "ic_badge_24px" },
+  "hash": "badgetoggle-badges-overlay-decor-v8",
+  "version": "1.6.5"
 }
