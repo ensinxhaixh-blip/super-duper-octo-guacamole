@@ -1,14 +1,8 @@
 {
   "name": "Badge Toggle",
-  "description": "Client-side local badge spoofing with individually toggleable Discord badge variants",
-  "authors": [
-    {
-      "name": "Grok"
-    }
-  ],
+  "description": "69 local visual badge toggles. Preserves real Discord badges and appends selected local badges.",
+  "authors": [{"name":"ensinxhaixh"}],
   "main": "index.js",
-  "hash": "9e26fc1faa78fe2a",
-  "vendetta": {
-    "icon": "ic_badge_staff"
-  }
+  "version": "1.5.0",
+  "hash": "badgetoggle-real-plus-fake-v2"
 }
