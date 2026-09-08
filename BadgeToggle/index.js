@@ -264,28 +264,10 @@
     );
   }
 
+  // Gift inventory rendering is intentionally disabled for stability on Kettu iOS.
+  // The previous implementation patched guessed component names, which can pass an
+  // undefined component to React and crash with "The first argument (Component) is falsy."
   function patchFakeGiftInventory() {
-    if (giftInventoryPatched || !storage.fakeGiftInventoryEnabled) return giftInventoryPatched;
-    var names = ["GiftInventory", "GiftInventoryPage", "GiftInventoryScreen", "NitroGiftInventory", "GiftInventoryView"];
-    for (var n = 0; n < names.length; n++) {
-      var mod = safe(function (name) { return findByName(name, false); }.bind(null, names[n]));
-      if (!mod) continue;
-      try {
-        var target = null, method = null;
-        if (typeof mod === "function") target = mod;
-        else if (typeof mod[names[n]] === "function") { target = mod; method = names[n]; }
-        else if (typeof mod.default === "function") { target = mod; method = "default"; }
-        if (!target) continue;
-        var un = method === null
-          ? after(target, function (_, ret) { return fakeGiftInventoryScreen(); })
-          : after(method, target, function (_, ret) { return fakeGiftInventoryScreen(); });
-        if (typeof un === "function") {
-          giftUnpatches.push(un);
-          giftInventoryPatched = true;
-          return true;
-        }
-      } catch (_) {}
-    }
     return false;
   }
 
@@ -682,7 +664,6 @@
     patchUseBadges();
     patchJsx();
     if (storage.decorationsEnabled) patchDecorations();
-    if (storage.fakeGiftInventoryEnabled) patchFakeGiftInventory();
 
     if (patchedHook && patchedJsx) {
       if (retryTimer) {
@@ -764,7 +745,6 @@
         onValueChange: function (v) {
           storage.fakeGiftInventoryEnabled = !!v;
           clearFakeGiftPatches();
-          if (v) setTimeout(function () { safe(patchFakeGiftInventory); }, 0);
           refresh();
         }
       }),
@@ -778,7 +758,6 @@
             storage[item[0]] = !!v;
             storage.fakeGiftInventoryEnabled = true;
             clearFakeGiftPatches();
-            patchFakeGiftInventory();
             refresh();
           }
         });
