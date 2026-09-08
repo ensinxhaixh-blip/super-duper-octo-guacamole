@@ -36,6 +36,7 @@
   var DECOR_CDN = "https://cdn.discordapp.com/avatar-decoration-presets/";
   var decorUnpatches = [];
   var decorPatched = false;
+  var decorResolverPatched = false;
   var decorJSXPatched = false;
 
   if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
@@ -77,55 +78,77 @@
     return null;
   }
 
+  // Discord's decoration renderer expects a normal AvatarDecoration-shaped
+  // object. Use the same local SKU convention used by Vencord's Decor plugin
+  // instead of the placeholder SKU that caused iOS profile rendering to crash.
+  var DECOR_SKU_ID = "100101099111114";
+
   function decorationObject() {
     var d = selectedDecoration();
     if (!d) return null;
-    return { asset: d[2], skuId: "0", sku_id: "0" };
+    return { asset: d[2], skuId: DECOR_SKU_ID };
   }
 
   function patchDecorationHook() {
-    // Kettu/iOS may not expose the hook under a stable function name.
-    // Try both name lookup and property lookup.
     if (decorPatched) return true;
+
+    // Prefer the user-aware hook. We only replace the hook result when the
+    // hook identifies the logged-in user, so other people's avatars are not
+    // modified and we don't inject a malformed decoration into unrelated
+    // profile renders.
     var candidates = [];
-    var m1 = safe(function () { return findByName("useAvatarDecoration", false); });
-    var m2 = safe(function () { return findByName("useUserAvatarDecoration", false); });
-    var m3 = safe(function () { return findByProps("useAvatarDecoration"); });
-    var m4 = safe(function () { return findByProps("useUserAvatarDecoration"); });
-    if (m1) candidates.push([m1, "useAvatarDecoration"]);
-    if (m2) candidates.push([m2, "useUserAvatarDecoration"]);
+    var m1 = safe(function () { return findByName("useUserAvatarDecoration", false); });
+    var m2 = safe(function () { return findByProps("useUserAvatarDecoration"); });
+    var m3 = safe(function () { return findByName("useAvatarDecoration", false); });
+    var m4 = safe(function () { return findByProps("useAvatarDecoration"); });
+
+    if (m1) candidates.push([m1, "useUserAvatarDecoration"]);
+    if (m2 && m2 !== m1) candidates.push([m2, "useUserAvatarDecoration"]);
     if (m3) candidates.push([m3, "useAvatarDecoration"]);
-    if (m4) candidates.push([m4, "useUserAvatarDecoration"]);
+    if (m4 && m4 !== m3) candidates.push([m4, "useAvatarDecoration"]);
 
     for (var c = 0; c < candidates.length; c++) {
       try {
         var pair = candidates[c];
         var obj = pair[0];
         var name = pair[1];
+        var target = null;
+        var method = null;
+
         if (typeof obj === "function") {
-          var un = after(obj, function (_, ret) {
-            var d = decorationObject();
-            return d || ret;
-          });
-          if (typeof un === "function") decorUnpatches.push(un);
-          decorPatched = true;
-          return true;
+          target = obj;
+        } else if (obj && typeof obj[name] === "function") {
+          target = obj;
+          method = name;
         }
-        if (obj && typeof obj[name] === "function") {
-          var un2 = after(name, obj, function (_, ret) {
-            var d2 = decorationObject();
-            return d2 || ret;
-          });
-          if (typeof un2 === "function") decorUnpatches.push(un2);
-          decorPatched = true;
-          return true;
-        }
+        if (!target) continue;
+
+        var callback = function (args, ret) {
+          var d = selectedDecoration();
+          if (!d) return ret;
+
+          var uid = argUserId(args);
+          if (uid && !isCurrentUser(uid)) return ret;
+
+          // If the hook exposes no user argument, do not guess. The resolver
+          // path below is still safe to use for an existing decoration.
+          if (!uid) return ret;
+
+          return decorationObject() || ret;
+        };
+
+        var un = method === null ? after(target, callback) : after(method, target, callback);
+        if (typeof un === "function") decorUnpatches.push(un);
+        decorPatched = true;
+        return true;
       } catch (_) {}
     }
     return false;
   }
 
   function patchDecorationResolver() {
+    if (decorResolverPatched) return true;
+
     var candidates = [];
     var n1 = safe(function () { return findByName("getAvatarDecorationURL", false); });
     var n2 = safe(function () { return findByProps("getAvatarDecorationURL"); });
@@ -139,26 +162,28 @@
         var method = null;
         if (typeof obj === "function") target = obj;
         else if (obj && typeof obj.getAvatarDecorationURL === "function") {
-          target = obj; method = "getAvatarDecorationURL";
+          target = obj;
+          method = "getAvatarDecorationURL";
         }
         if (!target) continue;
 
         var cb = function (args, ret) {
           var d = selectedDecoration();
           if (!d) return ret;
+
           var input = args && args[0];
           var a = input && input.avatarDecoration;
-          // Only replace a real decoration resolution request. This avoids
-          // affecting unrelated avatar URLs.
-          if (!a) return ret;
+          if (!a || a.skuId !== DECOR_SKU_ID) return ret;
+
           var asset = d[2];
           var canAnimate = !!(input && input.canAnimate);
           if (!canAnimate && asset.indexOf("a_") === 0) asset = asset.slice(2);
           return DECOR_CDN + asset + ".png";
         };
+
         var un = method === null ? after(target, cb) : after(method, target, cb);
         if (typeof un === "function") decorUnpatches.push(un);
-        decorPatched = true;
+        decorResolverPatched = true;
         return true;
       } catch (_) {}
     }
@@ -166,54 +191,17 @@
   }
 
   function patchDecorationJSX() {
-    if (decorJSXPatched) return true;
-    // Last-mile fallback: replace the decoration object on rendered avatar
-    // components. This works even when the hook/resolver isn't exported by name.
-    var jsx = safe(function () { return findByProps("jsx", "jsxs"); });
-    if (!jsx) return false;
-    var did = false;
-    ["jsx", "jsxs"].forEach(function (name) {
-      if (typeof jsx[name] !== "function") return;
-      try {
-        var un = after(name, jsx, function (args, ret) {
-          try {
-            var d = selectedDecoration();
-            if (!d || !ret || !ret.props) return ret;
-            var props = ret.props;
-            var type = ret.type;
-            var tn = type ? String(type.displayName || type.name || "") : "";
-            var looksLikeAvatar =
-              tn.indexOf("Avatar") !== -1 ||
-              tn.indexOf("Profile") !== -1 ||
-              props.avatarDecoration != null ||
-              (props.user && props.user.avatarDecoration != null);
-            if (!looksLikeAvatar) return ret;
-            var dec = decorationObject();
-            if (props.avatarDecoration !== undefined) props.avatarDecoration = dec;
-            if (props.user && typeof props.user === "object" && props.user.avatarDecoration !== undefined) {
-              var u = {};
-              for (var k in props.user) u[k] = props.user[k];
-              u.avatarDecoration = dec;
-              props.user = u;
-            }
-          } catch (_) {}
-          return ret;
-        });
-        if (typeof un === "function") decorUnpatches.push(un);
-        did = true;
-      } catch (_) {}
-    });
-    if (did) decorJSXPatched = true;
-    return did;
+    // Intentionally disabled. Patching React's global JSX factory was the
+    // source of the iOS profile render crash; decoration should enter through
+    // Discord's avatar-decoration hook instead.
+    return false;
   }
 
   function patchDecorations() {
     if (!storage.decorationsEnabled) return true;
-    // Try the most targeted paths first, then the JSX fallback.
-    var hook = patchDecorationHook();
-    var resolver = patchDecorationResolver();
-    var jsx = patchDecorationJSX();
-    return hook || resolver || jsx;
+    patchDecorationHook();
+    patchDecorationResolver();
+    return decorPatched || decorResolverPatched;
   }
 
   function clearDecorationPatches() {
@@ -222,6 +210,7 @@
     }
     decorUnpatches = [];
     decorPatched = false;
+    decorResolverPatched = false;
     decorJSXPatched = false;
   }
 
