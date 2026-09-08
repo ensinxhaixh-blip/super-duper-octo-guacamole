@@ -1,13 +1,13 @@
 {
   "name": "Badge Toggle",
-  "description": "Locally replaces your own profile badges with custom Discord-style badges",
+  "description": "Client-side local badge spoofing with individually toggleable Discord badge variants",
   "authors": [
     {
       "name": "Grok"
     }
   ],
   "main": "index.js",
-  "hash": "592ad22a659e0496",
+  "hash": "092ec6ea6923a0a4",
   "vendetta": {
     "icon": "ic_badge_staff"
   }
