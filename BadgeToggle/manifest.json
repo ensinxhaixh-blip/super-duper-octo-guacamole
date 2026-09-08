@@ -1,13 +1,13 @@
 {
   "name": "Badge Toggle",
-  "description": "Client-side toggle to show or hide user badges",
+  "description": "Locally replaces your own profile badges with custom Discord-style badges",
   "authors": [
     {
       "name": "Grok"
     }
   ],
   "main": "index.js",
-  "hash": "c9c308de0ca8457b",
+  "hash": "592ad22a659e0496",
   "vendetta": {
     "icon": "ic_badge_staff"
   }
