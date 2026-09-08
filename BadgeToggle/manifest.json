@@ -1,12 +1,14 @@
 {
   "name": "Badge Toggle",
-  "description": "Stable local-only visual badge toggles plus optional avatar decorations. No profile spoofing or global JSX hooks.",
+  "description": "Client-side local badge spoofing with individually toggleable Discord badge variants",
   "authors": [
     {
-      "name": "ensinxhaixh"
+      "name": "Grok"
     }
   ],
   "main": "index.js",
-  "version": "1.4.0",
-  "hash": "badgetoggle-stable-badges-decors-v2"
+  "hash": "9e26fc1faa78fe2a",
+  "vendetta": {
+    "icon": "ic_badge_staff"
+  }
 }
