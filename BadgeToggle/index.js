@@ -6,6 +6,7 @@
   var findByName = vendetta.metro.findByName;
   var findByProps = vendetta.metro.findByProps;
   var findByStoreName = vendetta.metro.findByStoreName;
+  var findAll = vendetta.metro.findAll;
   var after = vendetta.patcher.after;
   var storage = vendetta.plugin.storage;
   var Forms = vendetta.ui.components.Forms;
@@ -87,6 +88,92 @@
     var d = selectedDecoration();
     if (!d) return null;
     return { asset: d[2], skuId: DECOR_SKU_ID };
+  }
+
+  function functionSource(fn) {
+    try { return Function.prototype.toString.call(fn); } catch (_) { return ""; }
+  }
+
+  function patchDeepDecorationHooks() {
+    // Kettu/Vendetta's name finder can miss Discord's minified React hooks.
+    // Search Metro exports for hook-like functions that actually mention
+    // avatarDecoration. We only patch functions that look like React hooks,
+    // avoiding the global JSX patch that previously caused a render crash.
+    if (typeof findAll !== "function") return 0;
+
+    var patched = 0;
+    var modules = safe(function () {
+      return findAll(function (m) {
+        if (!m) return false;
+        try {
+          if (typeof m === "function") {
+            var src = functionSource(m);
+            return src.indexOf("avatarDecoration") !== -1 &&
+              (src.indexOf("useState") !== -1 || src.indexOf("useEffect") !== -1 || src.indexOf("useMemo") !== -1);
+          }
+          var keys = Object.keys(m);
+          for (var i = 0; i < keys.length; i++) {
+            var v = m[keys[i]];
+            if (typeof v !== "function") continue;
+            var src2 = functionSource(v);
+            if (src2.indexOf("avatarDecoration") !== -1 &&
+                (src2.indexOf("useState") !== -1 || src2.indexOf("useEffect") !== -1 || src2.indexOf("useMemo") !== -1)) return true;
+          }
+        } catch (_) {}
+        return false;
+      });
+    }) || [];
+
+    for (var mi = 0; mi < modules.length; mi++) {
+      var mod = modules[mi];
+      var targets = [];
+      if (typeof mod === "function") {
+        targets.push([null, mod]);
+      } else if (mod && typeof mod === "object") {
+        var keys2 = safe(function () { return Object.keys(mod); }) || [];
+        for (var ki = 0; ki < keys2.length; ki++) {
+          var key = keys2[ki];
+          var fn = safe(function () { return mod[key]; });
+          if (typeof fn !== "function") continue;
+          var src3 = functionSource(fn);
+          if (src3.indexOf("avatarDecoration") === -1) continue;
+          if (src3.indexOf("useState") === -1 && src3.indexOf("useEffect") === -1 && src3.indexOf("useMemo") === -1) continue;
+          targets.push([key, fn]);
+        }
+      }
+
+      for (var ti = 0; ti < targets.length; ti++) {
+        try {
+          var method = targets[ti][0];
+          var target = method === null ? targets[ti][1] : mod;
+          var fn = targets[ti][1];
+          var src4 = functionSource(fn);
+          // Require a return path mentioning avatarDecoration.
+          if (src4.indexOf("return") === -1) continue;
+
+          var cb = function (args, ret) {
+            var d = selectedDecoration();
+            if (!d) return ret;
+
+            // Prefer hooks receiving an explicit user object. If absent, only
+            // allow the replacement when the hook name itself is user-aware.
+            var uid = argUserId(args);
+            if (uid && !isCurrentUser(uid)) return ret;
+
+            if (!uid && method !== "useUserAvatarDecoration") return ret;
+            return decorationObject() || ret;
+          };
+
+          var un = method === null ? after(target, cb) : after(method, target, cb);
+          if (typeof un === "function") {
+            decorUnpatches.push(un);
+            patched++;
+          }
+        } catch (_) {}
+      }
+    }
+
+    return patched;
   }
 
   function patchDecorationHook() {
@@ -201,10 +288,13 @@
     if (!storage.decorationsEnabled) return true;
     patchDecorationHook();
     patchDecorationResolver();
-    return decorPatched || decorResolverPatched;
+    var deep = patchDeepDecorationHooks();
+    return decorPatched || decorResolverPatched || deep > 0;
   }
 
   function clearDecorationPatches() {
+    if (decorRetryTimer) clearInterval(decorRetryTimer);
+    decorRetryTimer = null;
     for (var i = 0; i < decorUnpatches.length; i++) {
       try { if (typeof decorUnpatches[i] === "function") decorUnpatches[i](); } catch (_) {}
     }
@@ -373,6 +463,7 @@
 
   var unpatches = [];
   var retryTimer = null;
+  var decorRetryTimer = null;
   var patchedHook = false;
   var patchedJsx = false;
 
@@ -606,6 +697,18 @@
         }
       }, 500);
     }
+    if (!decorRetryTimer) {
+      var decorAttempts = 0;
+      decorRetryTimer = setInterval(function () {
+        decorAttempts++;
+        if (storage.decorationsEnabled) patchDecorations();
+        else { clearInterval(decorRetryTimer); decorRetryTimer = null; return; }
+        if (decorAttempts >= 120) {
+          clearInterval(decorRetryTimer);
+          decorRetryTimer = null;
+        }
+      }, 500);
+    }
   }
 
   function setBadge(key, value) {
@@ -665,7 +768,18 @@
         onValueChange: function (v) {
           storage.decorationsEnabled = !!v;
           if (!v) clearDecorationPatches();
-          else patchDecorations();
+          else {
+            patchDecorations();
+            if (!decorRetryTimer) {
+              var da = 0;
+              decorRetryTimer = setInterval(function () {
+                da++;
+                if (storage.decorationsEnabled) patchDecorations();
+                else { clearInterval(decorRetryTimer); decorRetryTimer = null; return; }
+                if (da >= 120) { clearInterval(decorRetryTimer); decorRetryTimer = null; }
+              }, 500);
+            }
+          }
           refresh();
         }
       }),
@@ -678,7 +792,16 @@
             storage[item[0]] = !!v;
             storage.decorationsEnabled = !!v;
             clearDecorationPatches();
-            if (v) patchDecorations();
+            if (v) {
+              patchDecorations();
+              var da2 = 0;
+              decorRetryTimer = setInterval(function () {
+                da2++;
+                if (storage.decorationsEnabled) patchDecorations();
+                else { clearInterval(decorRetryTimer); decorRetryTimer = null; return; }
+                if (da2 >= 120) { clearInterval(decorRetryTimer); decorRetryTimer = null; }
+              }, 500);
+            }
             refresh();
           }
         });
@@ -703,6 +826,8 @@
     onUnload: function () {
       if (retryTimer) clearInterval(retryTimer);
       retryTimer = null;
+      if (decorRetryTimer) clearInterval(decorRetryTimer);
+      decorRetryTimer = null;
       clearPatches();
       clearDecorationPatches();
       refresh();
