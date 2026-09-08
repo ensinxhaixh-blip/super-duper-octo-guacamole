@@ -16,6 +16,136 @@
   var CDN = "https://cdn.discordapp.com/badge-icons";
   var OPAL = CDN + "/5b154df19c53dce2af92c9b61e6be5e2.png";
 
+  // Experimental decoration layer: does NOT modify UserStore or profile objects.
+  // It targets Discord's decoration resolver/hook instead.
+  var DECORATIONS = [
+    ["decor_angry", "Angry", "a_3c97a2d37f433a7913a1c7b7a735d000"],
+    ["decor_owlbear", "Owlbear Cub", "a_3c5743cedcb72131c58278278a97c143"],
+    ["decor_strawhat", "Straw Hat", "a_3d1e6078b2e4c8865e0ad0f429d651b1"],
+    ["decor_heartbloom", "Heartbloom", "a_3e1fc3c7ee2e34e8176f4737427e8f4f"],
+    ["decor_candlelight", "Candlelight", "a_3f29e6edfe1cff43736f644cf1d01278"],
+    ["decor_butterflies", "Butterflies", "a_4cd9ae5a8d103c219eacd3674d7730cd"],
+    ["decor_ufo", "UFO", "a_6fdbddb6229453eac3bbb212edf5cd1c"],
+    ["decor_sakura", "Sakura Warrior", "a_7cf09c7e78d6eb35ae354acc1d5cc676"],
+    ["decor_inlove", "In Love", "a_8ffa2ba9bff18e96b76c2e66fd0d7fa3"],
+    ["decor_solar", "Solar Orbit", "a_9a6bf0ab30a6719d6eb09fa4996984ca"],
+    ["decor_ruby", "Ruby Hearts", "a_a1c0581971d4a296908829289fea2c47"],
+    ["decor_fire", "Fire", "a_a065206df7b011a5510e4e5bca7d49be"]
+  ];
+
+  var DECOR_CDN = "https://cdn.discordapp.com/avatar-decoration-presets/";
+  var decorUnpatches = [];
+  var decorPatched = false;
+
+  if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
+  for (var di = 0; di < DECORATIONS.length; di++) {
+    if (storage[DECORATIONS[di][0]] == null) storage[DECORATIONS[di][0]] = false;
+  }
+
+  function selectedDecoration() {
+    if (!storage.decorationsEnabled) return null;
+    for (var i = 0; i < DECORATIONS.length; i++) {
+      if (storage[DECORATIONS[i][0]]) return DECORATIONS[i];
+    }
+    return null;
+  }
+
+  function currentUserId() {
+    var id = null;
+    safe(function () {
+      var us = findByStoreName("UserStore");
+      if (us && typeof us.getCurrentUser === "function") {
+        var u = us.getCurrentUser();
+        if (u) id = String(u.id);
+      }
+    });
+    return id;
+  }
+
+  function argUserId(args) {
+    try {
+      if (!args || !args.length) return null;
+      for (var i = 0; i < args.length; i++) {
+        var a = args[i];
+        if (!a || typeof a !== "object") continue;
+        if (a.user && a.user.id != null) return String(a.user.id);
+        if (a.currentUser && a.currentUser.id != null) return String(a.currentUser.id);
+        if (a.userId != null) return String(a.userId);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function decorationObject() {
+    var d = selectedDecoration();
+    if (!d) return null;
+    return { asset: d[2], skuId: "0", sku_id: "0" };
+  }
+
+  function patchDecorationHook() {
+    if (decorPatched) return true;
+    var mod = safe(function () { return findByName("useAvatarDecoration", false); });
+    if (!mod) mod = safe(function () { return findByName("useUserAvatarDecoration", false); });
+    if (!mod) return false;
+    try {
+      var target = typeof mod === "function" ? mod : (typeof mod.useAvatarDecoration === "function" ? mod : (typeof mod.useUserAvatarDecoration === "function" ? mod : null));
+      var method = null;
+      if (!target) return false;
+      if (typeof target === "function") method = null;
+      else method = typeof target.useAvatarDecoration === "function" ? "useAvatarDecoration" : "useUserAvatarDecoration";
+      var cb = function (args, ret) {
+        var d = decorationObject();
+        if (!d) return ret;
+        var uid = argUserId(args);
+        if (uid && uid === currentUserId()) return d;
+        return ret;
+      };
+      var un = method === null ? after(target, cb) : after(method, target, cb);
+      if (typeof un === "function") decorUnpatches.push(un);
+      decorPatched = true;
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function patchDecorationResolver() {
+    var mod = safe(function () { return findByName("getAvatarDecorationURL", false); });
+    if (!mod) return false;
+    try {
+      var target = typeof mod === "function" ? mod : (typeof mod.getAvatarDecorationURL === "function" ? mod : (typeof mod.default === "function" ? mod : null));
+      var method = null;
+      if (!target) return false;
+      if (typeof target !== "function") method = typeof target.getAvatarDecorationURL === "function" ? "getAvatarDecorationURL" : "default";
+      var cb = function (args, ret) {
+        var d = selectedDecoration();
+        if (!d) return ret;
+        var uid = argUserId(args);
+        if (!uid || uid !== currentUserId()) return ret;
+        var a = args && args[0] && args[0].avatarDecoration;
+        if (a && a._badgeToggleDecoration) return ret;
+        return DECOR_CDN + d[2].replace(/^a_/, "") + ".png";
+      };
+      var un = method === null ? after(target, cb) : after(method, target, cb);
+      if (typeof un === "function") decorUnpatches.push(un);
+      decorPatched = true;
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function patchDecorations() {
+    if (!storage.decorationsEnabled) return true;
+    if (decorPatched) return true;
+    // Prefer the avatar-decoration hook. Resolver is only a fallback when it can identify the user.
+    if (patchDecorationHook()) return true;
+    return patchDecorationResolver();
+  }
+
+  function clearDecorationPatches() {
+    for (var i = 0; i < decorUnpatches.length; i++) safe(function (fn) { return fn(); }.bind(null, decorUnpatches[i]));
+    decorUnpatches = [];
+    decorPatched = false;
+  }
+
+
   /*
    * Ordered to follow Discord's badge families/progression:
    * general/profile -> legacy/program -> Nitro -> boosting ->
@@ -174,7 +304,6 @@
 
   var unpatches = [];
   var retryTimer = null;
-  var patchTimer = null;
   var patchedHook = false;
   var patchedJsx = false;
 
@@ -286,19 +415,43 @@
 
     if (!uid || !isCurrentUser(uid)) return ret;
 
-    var list = enabledBadges().map(badgePayload);
+    var fake = enabledBadges().map(badgePayload);
 
-    if (Array.isArray(ret)) return list;
+    // Preserve Discord's real badges and append only our local visual badges.
+    // If no fake badges are enabled, return the original result untouched.
+    if (!fake.length) return ret;
+
+    function merge(real) {
+      var base = Array.isArray(real) ? real.slice() : [];
+      var seen = {};
+      for (var r = 0; r < base.length; r++) {
+        var rid = base[r] && (base[r].id || base[r].badgeId || base[r].key);
+        if (rid != null) seen[String(rid)] = true;
+      }
+      for (var f = 0; f < fake.length; f++) {
+        var fid = String(fake[f].id);
+        if (!seen[fid]) {
+          base.push(fake[f]);
+          seen[fid] = true;
+        }
+      }
+      return base;
+    }
+
+    if (Array.isArray(ret)) return merge(ret);
     if (ret && typeof ret === "object") {
       var copy = {};
       for (var k in ret) {
         if (Object.prototype.hasOwnProperty.call(ret, k)) copy[k] = ret[k];
       }
-      copy.badges = list;
-      copy.items = list;
+      var originalBadges = Array.isArray(ret.badges) ? ret.badges :
+                           (Array.isArray(ret.items) ? ret.items : []);
+      var merged = merge(originalBadges);
+      copy.badges = merged;
+      if (Array.isArray(ret.items)) copy.items = merged;
       return copy;
     }
-    return list;
+    return ret;
   }
 
   function patchJsx() {
@@ -389,6 +542,7 @@
   function tryPatch() {
     patchUseBadges();
     patchJsx();
+    if (storage.decorationsEnabled) patchDecorations();
 
     if (patchedHook && patchedJsx) {
       if (retryTimer) {
@@ -460,6 +614,36 @@
       ));
     }
 
+    children.push(React.createElement(
+      FormSection,
+      { title: "Avatar Decorations (Experimental)" },
+      React.createElement(FormSwitchRow, {
+        label: "Enable local decorations",
+        subLabel: "Renderer-only; does not modify UserStore",
+        value: !!storage.decorationsEnabled,
+        onValueChange: function (v) {
+          storage.decorationsEnabled = !!v;
+          if (!v) clearDecorationPatches();
+          else patchDecorations();
+          refresh();
+        }
+      }),
+      DECORATIONS.map(function (item) {
+        return React.createElement(FormSwitchRow, {
+          key: item[0], label: item[1], subLabel: "Experimental / local only",
+          value: !!storage[item[0]],
+          onValueChange: function (v) {
+            for (var j = 0; j < DECORATIONS.length; j++) storage[DECORATIONS[j][0]] = false;
+            storage[item[0]] = !!v;
+            storage.decorationsEnabled = !!v;
+            clearDecorationPatches();
+            if (v) patchDecorations();
+            refresh();
+          }
+        });
+      })
+    ));
+
     return React.createElement(
       RN.ScrollView,
       {
@@ -473,15 +657,13 @@
   return {
     onLoad: function () {
       startPatching();
-      patchTimer = setInterval(startPatching, 3000);
     },
 
     onUnload: function () {
       if (retryTimer) clearInterval(retryTimer);
-      if (patchTimer) clearInterval(patchTimer);
       retryTimer = null;
-      patchTimer = null;
       clearPatches();
+      clearDecorationPatches();
       refresh();
     },
 
