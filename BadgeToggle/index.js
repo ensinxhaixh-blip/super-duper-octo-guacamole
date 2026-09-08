@@ -3,706 +3,485 @@
 
   var React = vendetta.metro.common.React;
   var RN = vendetta.metro.common.ReactNative;
-
   var findByName = vendetta.metro.findByName;
   var findByProps = vendetta.metro.findByProps;
   var findByStoreName = vendetta.metro.findByStoreName;
-
   var after = vendetta.patcher.after;
   var storage = vendetta.plugin.storage;
+  var Forms = vendetta.ui.components.Forms;
 
-  var unpatches = [];
-  var retryTimer = null;
+  var FormSwitchRow = Forms.FormSwitchRow;
+  var FormSection = Forms.FormSection;
 
-  var patchedBadgesModule = null;
-  var patchedBadgesKey = null;
-  var patchedJSX = null;
-
-  var CDN =
-    "https://cdn.jsdelivr.net/gh/merlinfuchs/discord-badges/PNG/";
+  var CDN = "https://cdn.discordapp.com/badge-icons";
+  var OPAL = CDN + "/5b154df19c53dce2af92c9b61e6be5e2.png";
 
   /*
-   * All selectable badges.
+   * Ordered to follow Discord's badge families/progression:
+   * general/profile -> legacy/program -> Nitro -> boosting ->
+   * experimental progression families -> app/developer.
    *
-   * These are LOCAL visual replacements.
-   * They do not change your actual Discord account.
+   * Every switch is independent. This is a LOCAL visual spoof only.
    */
-
-  var BADGES = [
+  var SECTIONS = [
     {
-      key: "staff",
-      name: "Discord Staff",
-      description: "Discord Staff",
-      image: "staff.png"
+      title: "Profile & program badges",
+      badges: [
+        ["discord-staff", "Discord Staff", "discord_staff.png"],
+        ["partnered-server-owner", "Partnered Server Owner", "partner_server_owner.png"],
+        ["hypesquad-events", "HypeSquad Events", "hypesquad_events.png"],
+        ["hypesquad-bravery", "HypeSquad Bravery", "hypesquad_bravery.png"],
+        ["hypesquad-brilliance", "HypeSquad Brilliance", "hypesquad_brilliance.png"],
+        ["hypesquad-balance", "HypeSquad Balance", "hypesquad_balance.png"],
+        ["bug-hunter", "Bug Hunter", "bug_hunter.png"],
+        ["golden-bug-hunter", "Golden Bug Hunter", "golden_bug_hunter.png"],
+        ["early-supporter", "Early Supporter", "early_supporter.png"],
+        ["moderator-program-alumni", "Moderator Program Alumni", "moderator_programs_aluminum.png"]
+      ]
     },
-
     {
-      key: "partner",
-      name: "Partnered Server Owner",
-      description: "Partnered Server Owner",
-      image: "partnered_server_owner.png"
+      title: "Nitro — 1 → 72+ months",
+      badges: [
+        ["nitro-bronze", "Nitro Bronze · 1 month", "nitro_bronze.png"],
+        ["nitro-silver", "Nitro Silver · 3 months", "nitro_silver.png"],
+        ["nitro-gold", "Nitro Gold · 6 months", "nitro_gold.png"],
+        ["nitro-platinum", "Nitro Platinum · 12 months", "nitro_platinum.png"],
+        ["nitro-diamond", "Nitro Diamond · 24 months", "nitro_diamond.png"],
+        ["nitro-emerald", "Nitro Emerald · 36 months", "nitro_emerald.png"],
+        ["nitro-ruby", "Nitro Ruby · 60 months", "nitro_ruby.png"],
+        ["nitro-opal", "Nitro Opal · 72+ months", "nitro_opal.png"]
+      ]
     },
-
     {
-      key: "hypesquadEvents",
-      name: "HypeSquad Events",
-      description: "HypeSquad Events",
-      image: "hypesquad_events.png"
+      title: "Server Booster — 1 → 24 months",
+      badges: [
+        ["boost-1", "Server Booster · 1 month", "boost_1_months.png"],
+        ["boost-2", "Server Booster · 2 months", "boost_2_months.png"],
+        ["boost-3", "Server Booster · 3 months", "boost_3_months.png"],
+        ["boost-6", "Server Booster · 6 months", "boost_6_months.png"],
+        ["boost-9", "Server Booster · 9 months", "boost_9_months.png"],
+        ["boost-12", "Server Booster · 12 months", "boost_12_months.png"],
+        ["boost-15", "Server Booster · 15 months", "boost_15_months.png"],
+        ["boost-18", "Server Booster · 18 months", "boost_18_months.png"],
+        ["boost-24", "Server Booster · 24 months", "boost_24_months.png"]
+      ]
     },
-
     {
-      key: "hypesquadBravery",
-      name: "HypeSquad Bravery",
-      description: "HypeSquad Bravery",
-      image: "hypesquad_bravery.png"
+      title: "Gifting — 1 → 20 gifts",
+      badges: [
+        ["gift-patron", "Gifting · Patron · 1×", "gifting_patron.png"],
+        ["gift-champion", "Gifting · Champion · 2×", "gifting_champion.png"],
+        ["gift-luminary", "Gifting · Luminary · 3×", "gifting_luminary.png"],
+        ["gift-icon", "Gifting · Icon · 6×", "gifting_icon.png"],
+        ["gift-hero", "Gifting · Hero · 10×", "gifting_hero.png"],
+        ["gift-legend", "Gifting · Legend · 20×", "gifting_legend.png"]
+      ]
     },
-
     {
-      key: "hypesquadBrilliance",
-      name: "HypeSquad Brilliance",
-      description: "HypeSquad Brilliance",
-      image: "hypesquad_brilliance.png"
+      title: "Account Age — 1 → 10+ years",
+      badges: [
+        ["age-seed", "Account Age · Seed · 1 year", "account_age_seed.png"],
+        ["age-sprout", "Account Age · Sprout · 2 years", "account_age_sprout.png"],
+        ["age-bud", "Account Age · Bud · 3 years", "account_age_bud.png"],
+        ["age-sapling", "Account Age · Sapling · 4 years", "account_age_sapling.png"],
+        ["age-blossom", "Account Age · Blossom · 5 years", "account_age_blossom.png"],
+        ["age-redwood", "Account Age · Redwood · 6 years", "account_age_redwood.png"],
+        ["age-sequoia", "Account Age · Sequoia · 7 years", "account_age_sequoia.png"],
+        ["age-bristlecone", "Account Age · Bristlecone · 8 years", "account_age_bristlecone.png"],
+        ["age-stromatolite", "Account Age · Stromatolite · 9 years", "account_age_stromatolite.png"],
+        ["age-primordial", "Account Age · Primordial · 10+ years", "account_age_primordial.png"]
+      ]
     },
-
     {
-      key: "hypesquadBalance",
-      name: "HypeSquad Balance",
-      description: "HypeSquad Balance",
-      image: "hypesquad_balance.png"
+      title: "Streaming — 1 → 5,000+ hours",
+      badges: [
+        ["stream-newcomer", "Streaming · Newcomer · 1 hour", "streaming_newcomer.png"],
+        ["stream-fledgling", "Streaming · Fledgling · 5 hours", "streaming_fledgling.png"],
+        ["stream-breakout", "Streaming · Breakout · 20 hours", "streaming_breakout.png"],
+        ["stream-standout", "Streaming · Standout · 75 hours", "streaming_standout.png"],
+        ["stream-trendsetter", "Streaming · Trendsetter · 150 hours", "streaming_trendsetter.png"],
+        ["stream-headliner", "Streaming · Headliner · 300 hours", "streaming_headliner.png"],
+        ["stream-star", "Streaming · Star · 500 hours", "streaming_star.png"],
+        ["stream-sensation", "Streaming · Sensation · 1,000 hours", "streaming_sensation.png"],
+        ["stream-visionary", "Streaming · Visionary · 2,000 hours", "streaming_visionary.png"],
+        ["stream-phenomenon", "Streaming · Phenomenon · 5,000+ hours", "streaming_phenomenon.png"]
+      ]
     },
-
     {
-      key: "bugHunter1",
-      name: "Bug Hunter",
-      description: "Discord Bug Hunter",
-      image: "bug_hunter_level_1.png"
+      title: "Game Time — 1 → 5,000+ hours",
+      badges: [
+        ["game-casual", "Game Time · Casual · 1 hour", "game_time_casual.png"],
+        ["game-recreational", "Game Time · Recreational · 5 hours", "game_time_recreational.png"],
+        ["game-dedicated", "Game Time · Dedicated · 20 hours", "game_time_dedicated.png"],
+        ["game-committed", "Game Time · Committed · 75 hours", "game_time_committed.png"],
+        ["game-serious", "Game Time · Serious · 150 hours", "game_time_serious.png"],
+        ["game-devoted", "Game Time · Devoted · 300 hours", "game_time_devoted.png"],
+        ["game-seasoned", "Game Time · Seasoned · 500 hours", "game_time_seasoned.png"],
+        ["game-ironclad", "Game Time · Ironclad · 1,000 hours", "game_time_ironclad.png"],
+        ["game-unshakeable", "Game Time · Unshakeable · 2,000 hours", "game_time_unshakeable.png"],
+        ["game-eternal", "Game Time · Eternal · 5,000+ hours", "game_time_eternal.png"]
+      ]
     },
-
     {
-      key: "bugHunter2",
-      name: "Golden Bug Hunter",
-      description: "Discord Bug Hunter Level 2",
-      image: "bug_hunter_level_2.png"
+      title: "Game Variety — 2 → 100+ games",
+      badges: [
+        ["variety-sampler", "Game Variety · Sampler · 2 games", "game_variety_sampler.png"],
+        ["variety-dabbler", "Game Variety · Dabbler · 5 games", "game_variety_dabbler.png"],
+        ["variety-enthusiast", "Game Variety · Enthusiast · 10 games", "game_variety_enthusiast.png"],
+        ["variety-ranger", "Game Variety · Ranger · 15 games", "game_variety_ranger.png"],
+        ["variety-explorer", "Game Variety · Explorer · 20 games", "game_variety_explorer.png"],
+        ["variety-adventurer", "Game Variety · Adventurer · 30 games", "game_variety_adventurer.png"],
+        ["variety-voyager", "Game Variety · Voyager · 40 games", "game_variety_voyager.png"],
+        ["variety-maverick", "Game Variety · Maverick · 60 games", "game_variety_maverick.png"],
+        ["variety-polymath", "Game Variety · Polymath · 80 games", "game_variety_polymath.png"],
+        ["variety-universalist", "Game Variety · Universalist · 100+ games", "game_variety_universalist.png"]
+      ]
     },
-
     {
-      key: "earlySupporter",
-      name: "Early Supporter",
-      description: "Early Supporter",
-      image: "early_supporter.png"
-    },
-
-    {
-      key: "earlyDeveloper",
-      name: "Early Verified Developer",
-      description: "Early Verified Bot Developer",
-      image: "early_verified_developer.png"
-    },
-
-    {
-      key: "moderator",
-      name: "Certified Moderator",
-      description: "Moderator Programs Alumni",
-      image: "certified_moderator.png"
-    },
-
-    {
-      key: "activeDeveloper",
-      name: "Active Developer",
-      description: "Active Developer",
-      image: "active_developer.png"
-    },
-
-    {
-      key: "nitro",
-      name: "Nitro",
-      description: "Discord Nitro",
-      image: "nitro.png"
-    },
-
-    {
-      key: "boost1",
-      name: "Server Booster — 1 Month",
-      description: "Server boosting for 1 month",
-      image: "boosting_1_months.png"
-    },
-
-    {
-      key: "boost2",
-      name: "Server Booster — 2 Months",
-      description: "Server boosting for 2 months",
-      image: "boosting_2_months.png"
-    },
-
-    {
-      key: "boost3",
-      name: "Server Booster — 3 Months",
-      description: "Server boosting for 3 months",
-      image: "boosting_3_months.png"
-    },
-
-    {
-      key: "boost6",
-      name: "Server Booster — 6 Months",
-      description: "Server boosting for 6 months",
-      image: "boosting_6_months.png"
-    },
-
-    {
-      key: "boost9",
-      name: "Server Booster — 9 Months",
-      description: "Server boosting for 9 months",
-      image: "boosting_9_months.png"
-    },
-
-    {
-      key: "boost12",
-      name: "Server Booster — 12 Months",
-      description: "Server boosting for 12 months",
-      image: "boosting_12_months.png"
-    },
-
-    {
-      key: "boost15",
-      name: "Server Booster — 15 Months",
-      description: "Server boosting for 15 months",
-      image: "boosting_15_months.png"
-    },
-
-    {
-      key: "boost18",
-      name: "Server Booster — 18 Months",
-      description: "Server boosting for 18 months",
-      image: "boosting_18_months.png"
-    },
-
-    {
-      key: "boost24",
-      name: "Server Booster — 24 Months",
-      description: "Server boosting for 24 months",
-      image: "boosting_24_months.png"
+      title: "Developer & app badges",
+      badges: [
+        ["early-verified-developer", "Early Verified Developer", "early_verified_developer.png"],
+        ["active-developer", "Active Developer (retired)", "active_developer.png"],
+        ["supports-commands", "Supports Commands", "supports_application_commands.png"],
+        ["uses-automod", "Uses AutoMod", "uses_automod.png"],
+        ["discord-quests", "Discord Quests", "complete_a_quest.png"],
+        ["orbs", "Orbs", "orbs_apprentice.png"],
+        ["legacy-username", "Legacy Username", "originally_known_as.png"],
+        ["last-meadow", "Last Meadow Online", "last_meadow.png"]
+      ]
     }
   ];
 
-
-  /* -------------------------
-     STORAGE
-  ------------------------- */
-
-  if (storage.enabled == null)
-    storage.enabled = true;
-
-  for (var s = 0; s < BADGES.length; s++) {
-    var badgeKey = BADGES[s].key;
-
-    if (storage[badgeKey] == null) {
-      storage[badgeKey] = false;
+  var BADGES = [];
+  var SECTION_LOOKUP = {};
+  for (var s = 0; s < SECTIONS.length; s++) {
+    SECTION_LOOKUP[SECTIONS[s].title] = [];
+    for (var b = 0; b < SECTIONS[s].badges.length; b++) {
+      var x = SECTIONS[s].badges[b];
+      var item = {
+        key: x[0],
+        name: x[1],
+        file: x[2],
+        url: "https://raw.githubusercontent.com/dev-hoehle/discord-badges/main/png/" + x[2]
+      };
+      BADGES.push(item);
+      SECTION_LOOKUP[SECTIONS[s].title].push(item);
+      if (storage[item.key] == null) storage[item.key] = false;
     }
   }
 
+  if (storage.enabled == null) storage.enabled = true;
 
-  /*
-   * Make badge ID.
-   *
-   * The ID is local and intentionally different
-   * from Discord's real badge IDs.
-   */
+  var unpatches = [];
+  var retryTimer = null;
+  var patchTimer = null;
+  var patchedHook = false;
+  var patchedJsx = false;
 
-  function badgeId(badge) {
-    return "badge-toggle-" + badge.key;
+  function safe(fn) {
+    try { return fn(); } catch (_) { return null; }
   }
-
-
-  /* -------------------------
-     CLEANUP
-  ------------------------- */
 
   function clearPatches() {
     for (var i = 0; i < unpatches.length; i++) {
+      safe(unpatches[i]);
+    }
+    unpatches = [];
+    patchedHook = false;
+    patchedJsx = false;
+  }
+
+  function currentUserId() {
+    var store = safe(function () { return findByStoreName("UserStore"); });
+    if (!store) return null;
+    var u = safe(function () {
+      if (typeof store.getCurrentUser === "function") return store.getCurrentUser();
+      if (typeof store.getCurrentUserId === "function") return store.getCurrentUserId();
+      return null;
+    });
+    if (u && typeof u === "object") return u.id ? String(u.id) : null;
+    return u != null ? String(u) : null;
+  }
+
+  function isCurrentUser(id) {
+    if (id == null) return false;
+    var me = currentUserId();
+    return me != null && String(id) === me;
+  }
+
+  function enabledBadges() {
+    if (!storage.enabled) return [];
+    var out = [];
+    for (var i = 0; i < BADGES.length; i++) {
+      if (storage[BADGES[i].key]) out.push(BADGES[i]);
+    }
+    return out;
+  }
+
+  function badgePayload(b) {
+    return {
+      id: "badgetoggle-" + b.key,
+      description: b.name,
+      icon: " ",
+      source: b.url,
+      _badgeToggle: true,
+      _badgeToggleKey: b.key
+    };
+  }
+
+  function patchUseBadges() {
+    if (patchedHook) return true;
+
+    var mod = safe(function () { return findByName("useBadges", false); });
+    if (!mod) return false;
+
+    var target = null;
+    var method = null;
+
+    if (typeof mod === "function") {
+      target = mod;
+      method = null;
+    } else if (typeof mod.useBadges === "function") {
+      target = mod;
+      method = "useBadges";
+    } else if (typeof mod.default === "function") {
+      target = mod;
+      method = "default";
+    }
+
+    if (!target) return false;
+
+    try {
+      if (method === null) {
+        var un = after(target, function (_, ret) {
+          return replaceBadgeResult(arguments[0], ret);
+        });
+        if (typeof un === "function") unpatches.push(un);
+      } else {
+        var un2 = after(method, target, function (args, ret) {
+          return replaceBadgeResult(args, ret);
+        });
+        if (typeof un2 === "function") unpatches.push(un2);
+      }
+      patchedHook = true;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function replaceBadgeResult(args, ret) {
+    if (!storage.enabled) return ret;
+
+    var uid = null;
+    try {
+      if (args && args.length) {
+        var a = args[0];
+        if (typeof a === "string" || typeof a === "number") uid = String(a);
+        else if (a && typeof a === "object") {
+          uid = a.userId || a.user_id || a.id || null;
+        }
+      }
+    } catch (_) {}
+
+    if (!uid || !isCurrentUser(uid)) return ret;
+
+    var list = enabledBadges().map(badgePayload);
+
+    if (Array.isArray(ret)) return list;
+    if (ret && typeof ret === "object") {
+      var copy = {};
+      for (var k in ret) {
+        if (Object.prototype.hasOwnProperty.call(ret, k)) copy[k] = ret[k];
+      }
+      copy.badges = list;
+      copy.items = list;
+      return copy;
+    }
+    return list;
+  }
+
+  function patchJsx() {
+    if (patchedJsx) return true;
+
+    var jsx = safe(function () { return findByProps("jsx", "jsxs"); });
+    if (!jsx) return false;
+
+    var methods = ["jsx", "jsxs"];
+    var did = false;
+
+    for (var i = 0; i < methods.length; i++) {
+      var name = methods[i];
+      if (typeof jsx[name] !== "function") continue;
+
       try {
-        unpatches[i]();
+        var un = after(name, jsx, function (args, ret) {
+          try {
+            if (!ret || !ret.props) return ret;
+
+            var type = ret.type;
+            var typeName = "";
+            if (type) typeName = String(type.displayName || type.name || "");
+
+            if (typeName !== "ProfileBadge" &&
+                typeName !== "RenderedBadge" &&
+                typeName.indexOf("ProfileBadge") === -1 &&
+                typeName.indexOf("RenderedBadge") === -1) {
+              return ret;
+            }
+
+            var props = ret.props;
+            var id = props.id || props.badgeId || props.badge && props.badge.id;
+            var meta = null;
+
+            for (var j = 0; j < BADGES.length; j++) {
+              if ("badgetoggle-" + BADGES[j].key === String(id)) {
+                meta = BADGES[j];
+                break;
+              }
+            }
+
+            if (!meta) {
+              var src = props.source;
+              if (src && typeof src === "object" && src.uri) {
+                for (var z = 0; z < BADGES.length; z++) {
+                  if (src.uri === BADGES[z].url) {
+                    meta = BADGES[z];
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (meta) {
+              props.source = { uri: meta.url };
+              props.uri = meta.url;
+              props.image = { uri: meta.url };
+            }
+          } catch (_) {}
+          return ret;
+        });
+
+        if (typeof un === "function") unpatches.push(un);
+        did = true;
       } catch (_) {}
     }
 
-    unpatches = [];
-
-    patchedBadgesModule = null;
-    patchedBadgesKey = null;
-    patchedJSX = null;
+    if (did) patchedJsx = true;
+    return did;
   }
-
-
-  /* -------------------------
-     CURRENT USER
-  ------------------------- */
-
-  function getCurrentUser() {
-    try {
-      var UserStore =
-        findByStoreName("UserStore");
-
-      if (
-        UserStore &&
-        typeof UserStore.getCurrentUser === "function"
-      ) {
-        return UserStore.getCurrentUser();
-      }
-    } catch (_) {}
-
-    return null;
-  }
-
-
-  function extractUserId(value) {
-    if (value == null)
-      return null;
-
-    if (
-      typeof value === "string" ||
-      typeof value === "number"
-    ) {
-      return String(value);
-    }
-
-    if (typeof value !== "object")
-      return null;
-
-    if (value.userId != null)
-      return String(value.userId);
-
-    if (value.id != null)
-      return String(value.id);
-
-    if (value.user && value.user.id != null)
-      return String(value.user.id);
-
-    if (
-      value.member &&
-      value.member.user &&
-      value.member.user.id != null
-    ) {
-      return String(value.member.user.id);
-    }
-
-    if (
-      value.profile &&
-      value.profile.user &&
-      value.profile.user.id != null
-    ) {
-      return String(value.profile.user.id);
-    }
-
-    return null;
-  }
-
-
-  function isCurrentUser(value) {
-    var current = getCurrentUser();
-
-    if (!current || current.id == null)
-      return false;
-
-    var target = extractUserId(value);
-
-    if (target == null)
-      return false;
-
-    return String(target) === String(current.id);
-  }
-
-
-  /* -------------------------
-     CREATE SELECTED BADGES
-  ------------------------- */
-
-  function makeBadges() {
-    var result = [];
-
-    for (var i = 0; i < BADGES.length; i++) {
-      var badge = BADGES[i];
-
-      if (!storage[badge.key])
-        continue;
-
-      result.push({
-        id: badgeId(badge),
-        description: badge.description,
-        icon: " "
-      });
-    }
-
-    return result;
-  }
-
-
-  /* -------------------------
-     PATCH useBadges
-  ------------------------- */
-
-  function patchBadges() {
-    try {
-      var mod =
-        findByName("useBadges", false);
-
-      if (!mod)
-        return false;
-
-      var key = null;
-
-      if (typeof mod.default === "function") {
-        key = "default";
-      }
-
-      if (
-        !key &&
-        typeof mod.useBadges === "function"
-      ) {
-        key = "useBadges";
-      }
-
-      if (!key)
-        return false;
-
-      if (
-        patchedBadgesModule === mod &&
-        patchedBadgesKey === key
-      ) {
-        return true;
-      }
-
-      var unpatch = after(
-        key,
-        mod,
-        function (args, ret) {
-          try {
-            if (!storage.enabled)
-              return ret;
-
-            if (!Array.isArray(ret))
-              return ret;
-
-            var user =
-              args && args.length
-                ? args[0]
-                : null;
-
-            if (!isCurrentUser(user))
-              return ret;
-
-            return makeBadges();
-          } catch (_) {
-            return ret;
-          }
-        }
-      );
-
-      if (typeof unpatch === "function") {
-        unpatches.push(unpatch);
-      }
-
-      patchedBadgesModule = mod;
-      patchedBadgesKey = key;
-
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-
-  /* -------------------------
-     PATCH BADGE ICONS
-  ------------------------- */
-
-  function patchBadgeIcons() {
-    try {
-      var jsx =
-        findByProps("jsx", "jsxs");
-
-      if (!jsx)
-        return false;
-
-      if (patchedJSX === jsx)
-        return true;
-
-      function handle(args, ret) {
-        try {
-          if (!ret || !ret.props)
-            return ret;
-
-          var Type = args[0];
-
-          if (typeof Type !== "function")
-            return ret;
-
-          var name =
-            Type.displayName ||
-            Type.name ||
-            "";
-
-          if (
-            name !== "ProfileBadge" &&
-            name !== "RenderedBadge"
-          ) {
-            return ret;
-          }
-
-          var id = ret.props.id;
-
-          if (typeof id !== "string")
-            return ret;
-
-          for (var i = 0; i < BADGES.length; i++) {
-            var badge = BADGES[i];
-
-            if (id !== badgeId(badge))
-              continue;
-
-            ret.props.source = {
-              uri: CDN + badge.image
-            };
-
-            ret.props.description =
-              badge.description;
-
-            ret.props.onPress = undefined;
-            ret.props.onLongPress = undefined;
-
-            return ret;
-          }
-
-          return ret;
-        } catch (_) {
-          return ret;
-        }
-      }
-
-
-      var p1 =
-        after(
-          "jsx",
-          jsx,
-          handle
-        );
-
-      var p2 =
-        after(
-          "jsxs",
-          jsx,
-          handle
-        );
-
-      if (typeof p1 === "function")
-        unpatches.push(p1);
-
-      if (typeof p2 === "function")
-        unpatches.push(p2);
-
-      patchedJSX = jsx;
-
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-
-  /* -------------------------
-     REFRESH
-  ------------------------- */
 
   function refresh() {
-    try {
-      var UserStore =
-        findByStoreName("UserStore");
-
-      if (
-        UserStore &&
-        typeof UserStore.emitChange ===
-          "function"
-      ) {
-        UserStore.emitChange();
-      }
-    } catch (_) {}
-
-    try {
-      var stores = [
+    safe(function () {
+      var names = [
+        "UserStore",
         "UserProfileStore",
         "UserProfileStoreV2",
         "GuildMemberProfileStore"
       ];
-
-      for (var i = 0; i < stores.length; i++) {
-        try {
-          var store =
-            findByStoreName(stores[i]);
-
-          if (
-            store &&
-            typeof store.emitChange ===
-              "function"
-          ) {
-            store.emitChange();
-          }
-        } catch (_) {}
+      for (var i = 0; i < names.length; i++) {
+        var st = findByStoreName(names[i]);
+        if (st && typeof st.emitChange === "function") st.emitChange();
       }
-    } catch (_) {}
+    });
   }
 
+  function tryPatch() {
+    patchUseBadges();
+    patchJsx();
 
-  /* -------------------------
-     RETRY
-  ------------------------- */
-
-  function startRetry() {
-    var attempts = 0;
-
-    if (retryTimer) {
-      try {
+    if (patchedHook && patchedJsx) {
+      if (retryTimer) {
         clearInterval(retryTimer);
-      } catch (_) {}
+        retryTimer = null;
+      }
     }
+  }
 
-    retryTimer =
-      setInterval(function () {
+  function startPatching() {
+    tryPatch();
+    if (!retryTimer) {
+      var attempts = 0;
+      retryTimer = setInterval(function () {
         attempts++;
-
-        var badgeOK =
-          patchBadges();
-
-        var iconOK =
-          patchBadgeIcons();
-
-        if (badgeOK && iconOK) {
-          try {
-            clearInterval(retryTimer);
-          } catch (_) {}
-
-          retryTimer = null;
-
-          refresh();
-        }
-
-        if (attempts >= 30) {
-          try {
-            clearInterval(retryTimer);
-          } catch (_) {}
-
+        tryPatch();
+        if (attempts >= 60) {
+          clearInterval(retryTimer);
           retryTimer = null;
         }
       }, 500);
+    }
   }
 
-
-  /* -------------------------
-     SETTINGS
-  ------------------------- */
+  function setBadge(key, value) {
+    storage[key] = !!value;
+    refresh();
+  }
 
   function Settings() {
-    var rows = [];
+    var children = [];
 
-    rows.push(
-      React.createElement(
-        vendetta.ui.components.Forms.FormSwitchRow,
-        {
-          key: "enabled",
-
-          label: "Enable fake badges",
-
-          subLabel:
-            "Replace your profile badges locally",
-
-          value: !!storage.enabled,
-
-          onValueChange: function (value) {
-            storage.enabled = !!value;
-            refresh();
-          }
+    children.push(React.createElement(
+      FormSection,
+      { title: "Badge Toggle" },
+      React.createElement(FormSwitchRow, {
+        label: "Enable local badge spoofing",
+        subLabel: "Only changes how your own profile is rendered on this device",
+        value: !!storage.enabled,
+        onValueChange: function (v) {
+          storage.enabled = !!v;
+          refresh();
         }
-      )
-    );
+      })
+    ));
 
+    for (var s = 0; s < SECTIONS.length; s++) {
+      var rows = [];
+      var section = SECTIONS[s];
 
-    for (var i = 0; i < BADGES.length; i++) {
-      var badge = BADGES[i];
+      for (var b = 0; b < section.badges.length; b++) {
+        var item = SECTION_LOOKUP[section.title][b];
 
-      rows.push(
-        React.createElement(
-          vendetta.ui.components.Forms.FormSwitchRow,
-          {
-            key: badge.key,
+        rows.push(React.createElement(FormSwitchRow, {
+          key: item.key,
+          label: item.name,
+          subLabel: "Local only",
+          value: !!storage[item.key],
+          onValueChange: (function (key) {
+            return function (v) { setBadge(key, v); };
+          })(item.key)
+        }));
+      }
 
-            label: badge.name,
-
-            subLabel:
-              badge.description,
-
-            value:
-              !!storage[badge.key],
-
-            onValueChange:
-              (function (key) {
-                return function (value) {
-                  storage[key] =
-                    !!value;
-
-                  refresh();
-                };
-              })(badge.key)
-          }
-        )
-      );
+      children.push(React.createElement(
+        FormSection,
+        { key: section.title, title: section.title },
+        rows
+      ));
     }
-
 
     return React.createElement(
       RN.ScrollView,
       {
-        style: {
-          flex: 1
-        }
+        style: { flex: 1 },
+        contentContainerStyle: { paddingBottom: 48 }
       },
-
-      React.createElement(
-        vendetta.ui.components.Forms.FormSection,
-        {
-          title:
-            "Fake Profile Badges"
-        },
-
-        rows
-      )
+      children
     );
   }
 
-
-  /* -------------------------
-     PLUGIN
-  ------------------------- */
-
   return {
     onLoad: function () {
-      clearPatches();
-
-      patchBadges();
-      patchBadgeIcons();
-
-      startRetry();
-
-      refresh();
+      startPatching();
+      patchTimer = setInterval(startPatching, 3000);
     },
 
     onUnload: function () {
-      if (retryTimer) {
-        try {
-          clearInterval(retryTimer);
-        } catch (_) {}
-
-        retryTimer = null;
-      }
-
+      if (retryTimer) clearInterval(retryTimer);
+      if (patchTimer) clearInterval(patchTimer);
+      retryTimer = null;
+      patchTimer = null;
       clearPatches();
-
       refresh();
     },
 
