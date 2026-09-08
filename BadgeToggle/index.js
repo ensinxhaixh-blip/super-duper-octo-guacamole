@@ -35,20 +35,21 @@
 
   var DECOR_CDN = "https://cdn.discordapp.com/avatar-decoration-presets/";
   // Local-only fake Nitro Gift Inventory. This never creates real gift codes,
-  // purchases anything, or talks to Discord billing. It only replaces the
-  // inventory screen locally when the corresponding React component is found.
+  // purchases anything, or changes Discord billing. It only intercepts the
+  // native Gift Inventory API response on this device.
   var FAKE_GIFTS = [
-    ["fakegift_nitro_monthly", "Nitro · 1 Month", "Monthly Nitro gift"],
-    ["fakegift_nitro_3months", "Nitro · 3 Months", "3 months of Nitro"],
-    ["fakegift_nitro_6months", "Nitro · 6 Months", "6 months of Nitro"],
-    ["fakegift_nitro_yearly", "Nitro · 12 Months", "1 year of Nitro"]
+    ["fakegift_nitro_monthly", "Nitro · 1 Month", "511651880837840896", 1, 1],
+    ["fakegift_nitro_3months", "Nitro · 3 Months", "BTLOCALPLAN000003", 3, 3],
+    ["fakegift_nitro_6months", "Nitro · 6 Months", "BTLOCALPLAN000006", 6, 6],
+    ["fakegift_nitro_yearly", "Nitro · 12 Months", "511651885459963904", 1, 12]
   ];
   if (storage.fakeGiftInventoryEnabled == null) storage.fakeGiftInventoryEnabled = false;
   for (var fgi = 0; fgi < FAKE_GIFTS.length; fgi++) {
     if (storage[FAKE_GIFTS[fgi][0]] == null) storage[FAKE_GIFTS[fgi][0]] = false;
   }
-  var giftUnpatches = [];
-  var giftInventoryPatched = false;
+
+  var giftFetchOriginal = null;
+  var giftFetchPatched = false;
 
   var decorUnpatches = [];
   var decorPatched = false;
@@ -216,59 +217,15 @@
     return false;
   }
 
-  function enabledFakeGifts() {
-    if (!storage.fakeGiftInventoryEnabled) return [];
-    var out = [];
-    for (var i = 0; i < FAKE_GIFTS.length; i++) {
-      if (storage[FAKE_GIFTS[i][0]]) out.push(FAKE_GIFTS[i]);
+  function clearFakeGiftPatches() {
+    if (giftFetchPatched) {
+      try {
+        var root = globalThis;
+        if (root && giftFetchOriginal) root.fetch = giftFetchOriginal;
+      } catch (_) {}
     }
-    return out;
-  }
-
-  function fakeGiftCard(item, index) {
-    var cardStyle = {
-      marginHorizontal: 12,
-      marginVertical: 6,
-      padding: 14,
-      borderRadius: 12,
-      backgroundColor: "#2b2d31",
-      borderWidth: 1,
-      borderColor: "#3f4248"
-    };
-    return React.createElement(
-      RN.View,
-      { key: item[0], style: cardStyle },
-      React.createElement(RN.Text, { style: { fontSize: 17, fontWeight: "700", color: "#ffffff" } }, "🎁  " + item[1]),
-      React.createElement(RN.Text, { style: { marginTop: 5, fontSize: 13, color: "#b5bac1" } }, item[2]),
-      React.createElement(RN.Text, { style: { marginTop: 9, fontSize: 12, color: "#949ba4" } }, "Local fake gift · not redeemable")
-    );
-  }
-
-  function fakeGiftInventoryScreen() {
-    var gifts = enabledFakeGifts();
-    var cards = [];
-    if (!gifts.length) {
-      cards.push(React.createElement(RN.View, { key: "empty", style: { padding: 28, alignItems: "center" } },
-        React.createElement(RN.Text, { style: { fontSize: 16, fontWeight: "700", color: "#ffffff" } }, "No fake gifts"),
-        React.createElement(RN.Text, { style: { marginTop: 8, textAlign: "center", color: "#b5bac1" } }, "Enable a fake Nitro gift in Badge Toggle settings.")));
-    } else {
-      for (var i = 0; i < gifts.length; i++) cards.push(fakeGiftCard(gifts[i], i));
-    }
-    return React.createElement(
-      RN.ScrollView,
-      { style: { flex: 1, backgroundColor: "#313338" }, contentContainerStyle: { paddingBottom: 36 } },
-      React.createElement(RN.View, { style: { padding: 18, paddingBottom: 10 } },
-        React.createElement(RN.Text, { style: { fontSize: 22, fontWeight: "800", color: "#ffffff" } }, "Gift Inventory"),
-        React.createElement(RN.Text, { style: { marginTop: 5, color: "#b5bac1" } }, "Fake local Nitro gifts")),
-      cards
-    );
-  }
-
-  // Gift inventory rendering is intentionally disabled for stability on Kettu iOS.
-  // The previous implementation patched guessed component names, which can pass an
-  // undefined component to React and crash with "The first argument (Component) is falsy."
-  function patchFakeGiftInventory() {
-    return false;
+    giftFetchOriginal = null;
+    giftFetchPatched = false;
   }
 
   function clearFakeGiftPatches() {
@@ -664,6 +621,7 @@
     patchUseBadges();
     patchJsx();
     if (storage.decorationsEnabled) patchDecorations();
+    if (storage.fakeGiftInventoryEnabled) patchFakeGiftInventory();
 
     if (patchedHook && patchedJsx) {
       if (retryTimer) {
@@ -745,6 +703,7 @@
         onValueChange: function (v) {
           storage.fakeGiftInventoryEnabled = !!v;
           clearFakeGiftPatches();
+          if (v) setTimeout(function () { safe(patchFakeGiftInventory); }, 0);
           refresh();
         }
       }),
@@ -758,6 +717,7 @@
             storage[item[0]] = !!v;
             storage.fakeGiftInventoryEnabled = true;
             clearFakeGiftPatches();
+            setTimeout(function () { safe(patchFakeGiftInventory); }, 0);
             refresh();
           }
         });
