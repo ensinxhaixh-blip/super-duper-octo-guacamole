@@ -1,126 +1,165 @@
-import { findByProps, findByStoreName } from "@vendetta/metro";
-import { instead, after } from "@vendetta/patcher";
-import { storage } from "@vendetta/plugin";
-import { React, ReactNative as RN } from "@vendetta/metro/common";
-import { Forms } from "@vendetta/ui/components";
+(function () {
+  "use strict";
 
-const { FormSwitchRow, FormSection } = Forms;
+  var React = vendetta.metro.common.React;
+  var RN = vendetta.metro.common.ReactNative;
+  var findByProps = vendetta.metro.findByProps;
+  var findByStoreName = vendetta.metro.findByStoreName;
+  var instead = vendetta.patcher.instead;
+  var after = vendetta.patcher.after;
+  var storage = vendetta.plugin.storage;
+  var Forms = vendetta.ui.components.Forms;
 
-storage.showBadges ??= true;
+  var FormSwitchRow = Forms.FormSwitchRow;
+  var FormSection = Forms.FormSection;
 
-let unpatches = [];
+  if (storage.showBadges == null) {
+    storage.showBadges = true;
+  }
 
-function clearPatches() {
-    for (const unpatch of unpatches) {
-        try {
-            unpatch();
-        } catch {}
+  var unpatches = [];
+
+  function clearPatches() {
+    for (var i = 0; i < unpatches.length; i++) {
+      try {
+        unpatches[i]();
+      } catch (_) {}
     }
     unpatches = [];
-}
+  }
 
-function addPatch(patch) {
+  function addPatch(fn) {
     try {
-        const unpatch = patch();
-        if (typeof unpatch === "function") {
-            unpatches.push(unpatch);
-        }
-    } catch {}
-}
+      var unpatch = fn();
+      if (typeof unpatch === "function") {
+        unpatches.push(unpatch);
+      }
+    } catch (_) {}
+  }
 
-function applyPatches() {
+  function applyPatches() {
     clearPatches();
 
     if (storage.showBadges) return;
 
-    const possibleModules = [
-        findByProps("getBadges"),
-        findByProps("getUserBadges"),
-        findByProps("badges", "getBadges"),
-        findByProps("ProfileBadges"),
-        findByStoreName("UserProfileStore"),
-    ].filter(Boolean);
+    var possibleModules = [];
 
-    const modules = [...new Set(possibleModules)];
+    function addModule(fn) {
+      try {
+        var mod = fn();
+        if (mod) possibleModules.push(mod);
+      } catch (_) {}
+    }
 
-    for (const mod of modules) {
-        if (typeof mod.getBadges === "function") {
-            addPatch(() => instead("getBadges", mod, () => []));
-        }
+    addModule(function () { return findByProps("getBadges"); });
+    addModule(function () { return findByProps("getUserBadges"); });
+    addModule(function () { return findByProps("badges", "getBadges"); });
+    addModule(function () { return findByProps("ProfileBadges"); });
+    addModule(function () { return findByStoreName("UserProfileStore"); });
 
-        if (typeof mod.getUserBadges === "function") {
-            addPatch(() => instead("getUserBadges", mod, () => []));
-        }
+    var modules = [];
+    for (var m = 0; m < possibleModules.length; m++) {
+      if (modules.indexOf(possibleModules[m]) === -1) {
+        modules.push(possibleModules[m]);
+      }
+    }
 
-        if (typeof mod.getUserProfile === "function") {
-            addPatch(() =>
-                after("getUserProfile", mod, (_, ret) => {
-                    if (!ret || typeof ret !== "object") return ret;
+    for (var j = 0; j < modules.length; j++) {
+      var mod = modules[j];
 
-                    return {
-                        ...ret,
-                        badges: [],
-                        user:
-                            ret.user && typeof ret.user === "object"
-                                ? { ...ret.user, badges: [] }
-                                : ret.user,
-                    };
-                })
-            );
-        }
+      if (typeof mod.getBadges === "function") {
+        addPatch(function (target) {
+          return function () {
+            return instead("getBadges", target, function () {
+              return [];
+            });
+          };
+        }(mod));
+      }
+
+      if (typeof mod.getUserBadges === "function") {
+        addPatch(function (target) {
+          return function () {
+            return instead("getUserBadges", target, function () {
+              return [];
+            });
+          };
+        }(mod));
+      }
+
+      if (typeof mod.getUserProfile === "function") {
+        addPatch(function (target) {
+          return function () {
+            return after("getUserProfile", target, function (_, ret) {
+              if (!ret || typeof ret !== "object") return ret;
+
+              return {
+                ...ret,
+                badges: [],
+                user:
+                  ret.user && typeof ret.user === "object"
+                    ? { ...ret.user, badges: [] }
+                    : ret.user
+              };
+            });
+          };
+        }(mod));
+      }
     }
 
     try {
-        const BadgeComponents = findByProps("Badge", "ProfileBadge");
+      var BadgeComponents = findByProps("Badge", "ProfileBadge");
 
-        if (BadgeComponents) {
-            for (const key of ["Badge", "ProfileBadge"]) {
-                if (typeof BadgeComponents[key] === "function") {
-                    addPatch(() =>
-                        instead(key, BadgeComponents, () => null)
-                    );
-                }
-            }
-        }
-    } catch {}
-}
+      if (BadgeComponents) {
+        ["Badge", "ProfileBadge"].forEach(function (key) {
+          if (typeof BadgeComponents[key] === "function") {
+            addPatch(function (target, name) {
+              return function () {
+                return instead(name, target, function () {
+                  return null;
+                });
+              };
+            }(BadgeComponents, key));
+          }
+        });
+      }
+    } catch (_) {}
+  }
 
-function createSettings() {
+  function Settings() {
     return React.createElement(
-        RN.ScrollView,
-        {
-            style: { flex: 1 },
-            contentContainerStyle: { paddingBottom: 40 },
-        },
-        React.createElement(
-            FormSection,
-            { title: "Badge Toggle" },
-            React.createElement(FormSwitchRow, {
-                label: "Show badges",
-                subLabel: "When disabled, user badges are hidden client-side",
-                leading: React.createElement(Forms.FormIcon, {
-                    source: RN.Image.resolveAssetSource({
-                        uri: "ic_badge_staff",
-                    }),
-                }),
-                value: storage.showBadges,
-                onValueChange: (value) => {
-                    storage.showBadges = value;
-                    applyPatches();
-                },
-            })
-        )
+      RN.ScrollView,
+      {
+        style: { flex: 1 },
+        contentContainerStyle: { paddingBottom: 40 }
+      },
+      React.createElement(
+        FormSection,
+        { title: "Badge Toggle" },
+        React.createElement(FormSwitchRow, {
+          label: "Show badges",
+          subLabel: storage.showBadges
+            ? "User badges are visible"
+            : "User badges are hidden client-side",
+          value: !!storage.showBadges,
+          onValueChange: function (value) {
+            storage.showBadges = !!value;
+            applyPatches();
+          }
+        })
+      )
     );
-}
+  }
 
-export default {
-    onLoad() {
-        applyPatches();
+  return {
+    onLoad: function () {
+      applyPatches();
     },
 
-    onUnload() {
-        clearPatches();
+    onUnload: function () {
+      clearPatches();
     },
 
-    settings: createSettings,
-};
+    settings: Settings
+  };
+})()
