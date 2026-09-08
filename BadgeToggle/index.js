@@ -1,5 +1,3 @@
-const main = "index.js";
-
 import { findByProps, findByStoreName } from "@vendetta/metro";
 import { instead, after } from "@vendetta/patcher";
 import { storage } from "@vendetta/plugin";
@@ -8,19 +6,22 @@ import { Forms } from "@vendetta/ui/components";
 
 const { FormSwitchRow, FormSection } = Forms;
 
-// Default setting
 storage.showBadges ??= true;
 
 let unpatches = [];
 
 function applyPatches() {
-  // Clean previous patches
-  unpatches.forEach(u => u());
+  unpatches.forEach((unpatch) => {
+    try {
+      unpatch();
+    } catch {}
+  });
+
   unpatches = [];
 
-  if (storage.showBadges) return; // do nothing when badges are enabled
+  // Badges enabled: don't apply any patches.
+  if (storage.showBadges) return;
 
-  // Common places badges come from on mobile
   const possibleModules = [
     findByProps("getBadges"),
     findByProps("getUserBadges"),
@@ -42,23 +43,28 @@ function applyPatches() {
       );
     }
 
-    if (mod.getUserProfile) {
+    if (typeof mod.getUserProfile === "function") {
       unpatches.push(
         after("getUserProfile", mod, (_, ret) => {
           if (ret) {
             ret.badges = [];
-            if (ret.user) ret.user.badges = [];
+
+            if (ret.user) {
+              ret.user.badges = [];
+            }
           }
+
           return ret;
         })
       );
     }
   }
 
-  // Extra safety: patch common React components that render badges
   try {
-    const BadgeComponents = findByProps("Badge", "ProfileBadge") || {};
-    Object.keys(BadgeComponents).forEach(key => {
+    const BadgeComponents =
+      findByProps("Badge", "ProfileBadge") || {};
+
+    Object.keys(BadgeComponents).forEach((key) => {
       if (typeof BadgeComponents[key] === "function") {
         unpatches.push(
           instead(key, BadgeComponents, () => null)
@@ -74,7 +80,12 @@ export default {
   },
 
   onUnload() {
-    unpatches.forEach(u => u());
+    unpatches.forEach((unpatch) => {
+      try {
+        unpatch();
+      } catch {}
+    });
+
     unpatches = [];
   },
 
@@ -95,12 +106,12 @@ export default {
             />
           }
           value={storage.showBadges}
-          onValueChange={(v) => {
-            storage.showBadges = v;
+          onValueChange={(value) => {
+            storage.showBadges = value;
             applyPatches();
           }}
         />
       </FormSection>
     </RN.ScrollView>
-  )
+  ),
 };
