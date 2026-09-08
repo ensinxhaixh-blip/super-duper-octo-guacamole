@@ -1,9 +1,13 @@
-{
+
   "name": "Badge Toggle",
-  "description": "69 local visual badge toggles plus a renderer-only avatar decoration hook. Real badges are replaced locally.",
-  "authors": ["ensinxhaixh-blip"],
+  "description": "69 local visual badge toggles, experimental avatar decorations, and local-only fake Nitro Gift Inventory items.",
+  "authors": [
+    "ensinxhaixh-blip"
+  ],
   "main": "index.js",
-  "vendetta": { "icon": "ic_badge_24px" },
-  "hash": "badgetoggle-badges-hook-decor-v9",
-  "version": "1.6.6"
+  "vendetta": {
+    "icon": "ic_badge_24px"
+  },
+  "hash": "badgetoggle-badges-decor-fake-gift-inventory-v1",
+  "version": "1.7.0"
 }
