@@ -16,6 +16,208 @@
   var CDN = "https://cdn.discordapp.com/badge-icons";
   var OPAL = CDN + "/5b154df19c53dce2af92c9b61e6be5e2.png";
 
+  // Experimental decoration layer: does NOT modify UserStore or profile objects.
+  // It targets Discord's decoration resolver/hook instead.
+  var DECORATIONS = [
+    ["decor_angry", "Angry", "a_3c97a2d37f433a7913a1c7b7a735d000"],
+    ["decor_owlbear", "Owlbear Cub", "a_3c5743cedcb72131c58278278a97c143"],
+    ["decor_strawhat", "Straw Hat", "a_3d1e6078b2e4c8865e0ad0f429d651b1"],
+    ["decor_heartbloom", "Heartbloom", "a_3e1fc3c7ee2e34e8176f4737427e8f4f"],
+    ["decor_candlelight", "Candlelight", "a_3f29e6edfe1cff43736f644cf1d01278"],
+    ["decor_butterflies", "Butterflies", "a_4cd9ae5a8d103c219eacd3674d7730cd"],
+    ["decor_ufo", "UFO", "a_6fdbddb6229453eac3bbb212edf5cd1c"],
+    ["decor_sakura", "Sakura Warrior", "a_7cf09c7e78d6eb35ae354acc1d5cc676"],
+    ["decor_inlove", "In Love", "a_8ffa2ba9bff18e96b76c2e66fd0d7fa3"],
+    ["decor_solar", "Solar Orbit", "a_9a6bf0ab30a6719d6eb09fa4996984ca"],
+    ["decor_ruby", "Ruby Hearts", "a_a1c0581971d4a296908829289fea2c47"],
+    ["decor_fire", "Fire", "a_a065206df7b011a5510e4e5bca7d49be"]
+  ];
+
+  var DECOR_CDN = "https://cdn.discordapp.com/avatar-decoration-presets/";
+  var decorUnpatches = [];
+  var decorPatched = false;
+  var decorResolverPatched = false;
+  var decorJSXPatched = false;
+
+  if (storage.decorationsEnabled == null) storage.decorationsEnabled = false;
+  for (var di = 0; di < DECORATIONS.length; di++) {
+    if (storage[DECORATIONS[di][0]] == null) storage[DECORATIONS[di][0]] = false;
+  }
+
+  function selectedDecoration() {
+    if (!storage.decorationsEnabled) return null;
+    for (var i = 0; i < DECORATIONS.length; i++) {
+      if (storage[DECORATIONS[i][0]]) return DECORATIONS[i];
+    }
+    return null;
+  }
+
+  function currentUserId() {
+    var id = null;
+    safe(function () {
+      var us = findByStoreName("UserStore");
+      if (us && typeof us.getCurrentUser === "function") {
+        var u = us.getCurrentUser();
+        if (u) id = String(u.id);
+      }
+    });
+    return id;
+  }
+
+  function argUserId(args) {
+    try {
+      if (!args || !args.length) return null;
+      for (var i = 0; i < args.length; i++) {
+        var a = args[i];
+        if (!a || typeof a !== "object") continue;
+        if (a.user && a.user.id != null) return String(a.user.id);
+        if (a.currentUser && a.currentUser.id != null) return String(a.currentUser.id);
+        if (a.userId != null) return String(a.userId);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Discord's decoration renderer expects a normal AvatarDecoration-shaped
+  // object. Use the same local SKU convention used by Vencord's Decor plugin
+  // instead of the placeholder SKU that caused iOS profile rendering to crash.
+  var DECOR_SKU_ID = "100101099111114";
+
+  function decorationObject() {
+    var d = selectedDecoration();
+    if (!d) return null;
+    return { asset: d[2], skuId: DECOR_SKU_ID };
+  }
+
+  function patchDecorationHook() {
+    if (decorPatched) return true;
+
+    // This follows the important part of the Vencord/fakeProfile approach:
+    // replace the value returned by Discord's avatar-decoration hook before
+    // the avatar component renders. Do not touch UserStore/profile objects.
+    var candidates = [];
+    var m1 = safe(function () { return findByName("useUserAvatarDecoration", false); });
+    var m2 = safe(function () { return findByProps("useUserAvatarDecoration"); });
+    var m3 = safe(function () { return findByName("useAvatarDecoration", false); });
+    var m4 = safe(function () { return findByProps("useAvatarDecoration"); });
+
+    if (m1) candidates.push([m1, "useUserAvatarDecoration"]);
+    if (m2 && m2 !== m1) candidates.push([m2, "useUserAvatarDecoration"]);
+    if (m3) candidates.push([m3, "useAvatarDecoration"]);
+    if (m4 && m4 !== m3) candidates.push([m4, "useAvatarDecoration"]);
+
+    for (var c = 0; c < candidates.length; c++) {
+      try {
+        var pair = candidates[c];
+        var obj = pair[0];
+        var name = pair[1];
+        var target = null;
+        var method = null;
+
+        if (typeof obj === "function") target = obj;
+        else if (obj && typeof obj[name] === "function") {
+          target = obj;
+          method = name;
+        }
+        if (!target) continue;
+
+        var callback = function (args, ret) {
+          var d = selectedDecoration();
+          if (!d) return ret;
+
+          // If Discord supplies a user, only spoof our own decoration.
+          // If this particular hook supplies no user argument, allow the
+          // hook result to be replaced; this is necessary on some iOS builds
+          // where the user is captured by the component instead of passed to
+          // the hook.
+          var uid = argUserId(args);
+          if (uid && !isCurrentUser(uid)) return ret;
+
+          return decorationObject();
+        };
+
+        var un = method === null ? after(target, callback) : after(method, target, callback);
+        if (typeof un === "function") {
+          decorUnpatches.push(un);
+          decorPatched = true;
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  function patchDecorationResolver() {
+    if (decorResolverPatched) return true;
+
+    var candidates = [];
+    var n1 = safe(function () { return findByName("getAvatarDecorationURL", false); });
+    var n2 = safe(function () { return findByProps("getAvatarDecorationURL"); });
+    if (n1) candidates.push(n1);
+    if (n2 && n2 !== n1) candidates.push(n2);
+
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        var obj = candidates[i];
+        var target = null;
+        var method = null;
+        if (typeof obj === "function") target = obj;
+        else if (obj && typeof obj.getAvatarDecorationURL === "function") {
+          target = obj;
+          method = "getAvatarDecorationURL";
+        }
+        if (!target) continue;
+
+        var cb = function (args, ret) {
+          var d = selectedDecoration();
+          if (!d) return ret;
+
+          var input = args && args[0];
+          var a = input && input.avatarDecoration;
+          if (!a || a.skuId !== DECOR_SKU_ID) return ret;
+
+          var asset = d[2];
+          var canAnimate = !!(input && input.canAnimate);
+          if (!canAnimate && asset.indexOf("a_") === 0) asset = asset.slice(2);
+          return DECOR_CDN + asset + ".png";
+        };
+
+        var un = method === null ? after(target, cb) : after(method, target, cb);
+        if (typeof un === "function") {
+          decorUnpatches.push(un);
+          decorResolverPatched = true;
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  function patchDecorationJSX() {
+    // Intentionally disabled. Patching React's global JSX factory was the
+    // source of the iOS profile render crash; decoration should enter through
+    // Discord's avatar-decoration hook instead.
+    return false;
+  }
+
+  function patchDecorations() {
+    if (!storage.decorationsEnabled) return true;
+    patchDecorationHook();
+    patchDecorationResolver();
+    return decorPatched || decorResolverPatched;
+  }
+
+  function clearDecorationPatches() {
+    for (var i = 0; i < decorUnpatches.length; i++) {
+      try { if (typeof decorUnpatches[i] === "function") decorUnpatches[i](); } catch (_) {}
+    }
+    decorUnpatches = [];
+    decorPatched = false;
+    decorResolverPatched = false;
+    decorJSXPatched = false;
+  }
+
+
   /*
    * Ordered to follow Discord's badge families/progression:
    * general/profile -> legacy/program -> Nitro -> boosting ->
@@ -172,17 +374,10 @@
 
   if (storage.enabled == null) storage.enabled = true;
 
-  // Local-only username spoof. This returns a copy of the current user's
-  // object with a fake username; it does not mutate UserStore data.
-  if (storage.usernameEnabled == null) storage.usernameEnabled = false;
-  if (storage.fakeUsername == null) storage.fakeUsername = "";
-
   var unpatches = [];
   var retryTimer = null;
-  var patchTimer = null;
   var patchedHook = false;
   var patchedJsx = false;
-  var patchedUsername = false;
 
   function safe(fn) {
     try { return fn(); } catch (_) { return null; }
@@ -195,7 +390,6 @@
     unpatches = [];
     patchedHook = false;
     patchedJsx = false;
-    patchedUsername = false;
   }
 
   function currentUserId() {
@@ -214,49 +408,6 @@
     if (id == null) return false;
     var me = currentUserId();
     return me != null && String(id) === me;
-  }
-
-  function fakeUsernameValue() {
-    return String(storage.fakeUsername || "").trim();
-  }
-
-  function decorateUsername(user) {
-    if (!storage.usernameEnabled || !user || !isCurrentUser(user.id)) return user;
-    var name = fakeUsernameValue();
-    if (!name) return user;
-
-    var copy = {};
-    for (var k in user) {
-      if (Object.prototype.hasOwnProperty.call(user, k)) copy[k] = user[k];
-    }
-    copy.username = name;
-    return copy;
-  }
-
-  function patchUsername() {
-    if (patchedUsername) return true;
-    var store = safe(function () { return findByStoreName("UserStore"); });
-    if (!store) return false;
-
-    var did = false;
-    ["getCurrentUser", "getUser", "getUserById"].forEach(function (method) {
-      if (typeof store[method] !== "function") return;
-      try {
-        var un = after(method, store, function (args, ret) {
-          if (!ret || typeof ret !== "object") return ret;
-          var id = ret.id;
-          if (!id && args && args[0]) {
-            id = typeof args[0] === "object" ? args[0].id : args[0];
-          }
-          return isCurrentUser(id) ? decorateUsername(ret) : ret;
-        });
-        if (typeof un === "function") unpatches.push(un);
-        did = true;
-      } catch (_) {}
-    });
-
-    if (did) patchedUsername = true;
-    return did;
   }
 
   function enabledBadges() {
@@ -328,27 +479,23 @@
       if (args && args.length) {
         var a = args[0];
         if (typeof a === "string" || typeof a === "number") uid = String(a);
-        else if (a && typeof a === "object") {
-          uid = a.userId || a.user_id || a.id || null;
-        }
+        else if (a && typeof a === "object") uid = a.userId || a.user_id || a.id || null;
       }
     } catch (_) {}
 
     if (!uid || !isCurrentUser(uid)) return ret;
 
-    var list = enabledBadges().map(badgePayload);
-
-    if (Array.isArray(ret)) return list;
+    // Replace the real badges entirely in the local rendered result.
+    var fake = enabledBadges().map(badgePayload);
+    if (Array.isArray(ret)) return fake;
     if (ret && typeof ret === "object") {
       var copy = {};
-      for (var k in ret) {
-        if (Object.prototype.hasOwnProperty.call(ret, k)) copy[k] = ret[k];
-      }
-      copy.badges = list;
-      copy.items = list;
+      for (var k in ret) if (Object.prototype.hasOwnProperty.call(ret, k)) copy[k] = ret[k];
+      copy.badges = fake;
+      if (Array.isArray(ret.items)) copy.items = fake;
       return copy;
     }
-    return list;
+    return fake;
   }
 
   function patchJsx() {
@@ -437,9 +584,9 @@
   }
 
   function tryPatch() {
-    if (storage.usernameEnabled) patchUsername();
     patchUseBadges();
     patchJsx();
+    if (storage.decorationsEnabled) patchDecorations();
 
     if (patchedHook && patchedJsx) {
       if (retryTimer) {
@@ -471,35 +618,6 @@
 
   function Settings() {
     var children = [];
-
-    children.push(React.createElement(
-      FormSection,
-      { title: "Username" },
-      React.createElement(FormSwitchRow, {
-        label: "Enable fake username",
-        subLabel: "Local-only; does not change your Discord account",
-        value: !!storage.usernameEnabled,
-        onValueChange: function (v) {
-          storage.usernameEnabled = !!v;
-          if (v) setTimeout(function () { safe(patchUsername); }, 0);
-          refresh();
-        }
-      }),
-      React.createElement(RN.View, { style: { paddingHorizontal: 16, paddingVertical: 8 } },
-        React.createElement(RN.TextInput, {
-          placeholder: "Fake username",
-          value: storage.fakeUsername,
-          onChangeText: function (v) {
-            storage.fakeUsername = v;
-            if (storage.usernameEnabled) setTimeout(function () { safe(patchUsername); }, 0);
-            refresh();
-          },
-          autoCapitalize: "none",
-          autoCorrect: false,
-          style: { padding: 12, borderRadius: 8, backgroundColor: "rgba(128,128,128,0.15)", color: "#fff" }
-        })
-      )
-    ));
 
     children.push(React.createElement(
       FormSection,
@@ -540,6 +658,36 @@
       ));
     }
 
+    children.push(React.createElement(
+      FormSection,
+      { title: "Avatar Decorations (Experimental)" },
+      React.createElement(FormSwitchRow, {
+        label: "Enable local decorations",
+        subLabel: "Renderer-only; does not modify UserStore",
+        value: !!storage.decorationsEnabled,
+        onValueChange: function (v) {
+          storage.decorationsEnabled = !!v;
+          if (!v) clearDecorationPatches();
+          else setTimeout(function () { safe(patchDecorations); }, 0);
+          refresh();
+        }
+      }),
+      DECORATIONS.map(function (item) {
+        return React.createElement(FormSwitchRow, {
+          key: item[0], label: item[1], subLabel: "Experimental / local only",
+          value: !!storage[item[0]],
+          onValueChange: function (v) {
+            for (var j = 0; j < DECORATIONS.length; j++) storage[DECORATIONS[j][0]] = false;
+            storage[item[0]] = !!v;
+            storage.decorationsEnabled = !!v;
+            clearDecorationPatches();
+            if (v) patchDecorations();
+            refresh();
+          }
+        });
+      })
+    ));
+
     return React.createElement(
       RN.ScrollView,
       {
@@ -553,15 +701,13 @@
   return {
     onLoad: function () {
       startPatching();
-      patchTimer = setInterval(startPatching, 3000);
     },
 
     onUnload: function () {
       if (retryTimer) clearInterval(retryTimer);
-      if (patchTimer) clearInterval(patchTimer);
       retryTimer = null;
-      patchTimer = null;
       clearPatches();
+      clearDecorationPatches();
       refresh();
     },
 
