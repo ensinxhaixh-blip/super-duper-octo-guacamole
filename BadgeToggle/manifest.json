@@ -1,6 +1,6 @@
 {
   "name": "Badge Toggle",
-  "description": "69 local visual badge toggles, experimental avatar decorations, and native-screen local fake Nitro Gift Inventory items.",
+  "description": "69 local visual badge toggles plus a local fake username. No decorations or fake gifts.",
   "authors": [
     "ensinxhaixh-blip"
   ],
@@ -8,6 +8,6 @@
   "vendetta": {
     "icon": "ic_badge_24px"
   },
-  "hash": "badgetoggle-badges-decor-fake-gift-inventory-v2",
-  "version": "1.7.2"
+  "hash": "badgetoggle-badges-username-v1",
+  "version": "1.8.0"
 }
